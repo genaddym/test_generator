@@ -41,7 +41,7 @@ class OpenAIClient:
         test_flow_file = None
         
         for file in md_files:
-            if file.startswith("command_outputs"):
+            if "command-outputs" in file.lower():
                 command_outputs_file = os.path.join(test_folder_path, file)
             else:
                 test_flow_file = os.path.join(test_folder_path, file)
@@ -63,7 +63,7 @@ class OpenAIClient:
             project_context = f.read()
         
         # Read test template
-        template_path = os.path.join("tests", "lab-1", "test_anycast_sid", "test_anycast_sid.py")
+        template_path = os.path.join("test_template.py")
         with open(template_path, "r") as f:
             test_template = f.read()
         
