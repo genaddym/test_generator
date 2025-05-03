@@ -89,36 +89,20 @@ class OpenAIClient:
         Command Outputs:
         {command_outputs}
 
-        Based on the provided project context, test template, and test documentation, generate a detailed implementation guide for creating the test components. The guide should include:
+        Based on the provided project context, test template, and test documentation, generate a detailed implementation guide for creating the test components, divided into steps. The guide should include:
 
-        1. Required Deciphers:
-           - List of CLI commands that need parsing
-           - Structure of each decipher class
-           - Required data objects for parsed output
-           - For each CLI command, create a folder with the command name. 
-           Into this folder, create a file called `decipher.py`, file called data_object.py and a file called `unit_test.py`.
+        1. Understand what CLI commands are required to implement the test.
+        2. Required Deciphers. Create a new step for each CLI command and decipher that is required to implement for this CLI command:
+           - Specify the CLI command that is being parsed.
+           - Provide an example of the full CLI command output. Find the corresponding output in the command outputs file.
+           - Specify the required data objects for parsed output.
+           - For each CLI command, a folder with the command name should be created. 
+           Into this folder, a file called `decipher.py`, file called `data_object.py` and a file called `unit_test.py` should be created.
            - Each decipher should inherit from DecipherBase, implement the `decipher` method and return a data object.
-           - Each decipher should have a unit test, and the unit test should be included in the implementation guide. 
-           Use the command outputs to create the unit test.
+           - A unit test should be created in the `unit_test.py` file.
+           - Instruct to use the command outputs to create the unit test.
 
-        2. Test Class Structure:
-           - Follow the structure from the test template
-           - Main test class and its methods
-           - Required helper classes and methods
-           - Data structures for storing test data
-           - Use similar patterns for logging, error handling, and assertions
 
-        3. Implementation Steps:
-           - Step-by-step guide for implementing each component
-           - Order of implementation
-           - Dependencies between components
-           - Follow the same patterns as in the template test
-
-        4. Testing Strategy:
-           - How to verify each component
-           - Test cases to implement
-           - Expected results
-           - Use similar logging and error reporting as in the template
 
         Format the output as a markdown document with clear sections and subsections.
         """
@@ -129,7 +113,7 @@ class OpenAIClient:
                 {"role": "system", "content": "You are a network testing expert that helps create test implementations."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
+            temperature=0.2,
         )
         
         # Save the implementation guide to a file
