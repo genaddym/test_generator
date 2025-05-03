@@ -1,0 +1,77 @@
+Network Testing Infrastructure Project Description
+
+This project provides a comprehensive infrastructure for creating and executing network tests, specifically designed for testing network devices (routers) through CLI interfaces. The infrastructure enables automated testing of network configurations, routing protocols, and device behaviors.
+
+Key Components:
+
+1. CLI Session Management (cli_session.py):
+- Provides a base interface for managing CLI sessions with network devices
+- Supports multiple vendor implementations through an abstract base class
+- Handles connection lifecycle, command execution, and configuration management
+- Features:
+  * SSH-based device connections
+  * Command execution with response handling
+  * Configuration management (edit, commit, rollback)
+  * Pagination handling for show commands
+  * Support for both interactive and non-interactive commands
+
+2. Response Parsing (decipher_base.py):
+- Implements a framework for parsing CLI command responses into structured data
+- Uses the Decipher abstract base class to define parsing interfaces
+- Enables conversion of raw CLI text output into structured Python objects
+- Supports vendor-specific parsing implementations
+- Key features:
+  * Abstract decipher method for parsing CLI responses
+  * Type-safe return values
+  * Extensible architecture for different parsing needs
+
+3. Test Implementation (test_anycast_sid.py):
+- Demonstrates practical usage of the infrastructure
+- Implements complex network testing scenarios
+- Features:
+  * BGP route validation
+  * AS path verification
+  * Community attribute checking
+  * Multi-device consistency verification
+  * IPv4 and IPv6 support
+  * Comprehensive error reporting and logging
+
+Testing Capabilities:
+- Automated device configuration verification
+- Routing protocol validation
+- Multi-device consistency checks
+- Complex network topology testing
+- Support for both IPv4 and IPv6
+- BGP route and attribute validation
+- AS path and community verification
+
+Architecture Highlights:
+- Modular design with clear separation of concerns
+- Extensible for different network vendors
+- Comprehensive error handling and reporting
+- Support for complex network testing scenarios
+- Structured data parsing and validation
+- Multi-device coordination and verification
+
+Use Cases:
+- Network device configuration validation
+- Routing protocol implementation verification
+- Network topology consistency checking
+- BGP route and attribute validation
+- Multi-vendor network testing
+- Automated network testing and validation
+
+This infrastructure is particularly useful for:
+- Network engineers and operators
+- Network testing teams
+- Network device vendors
+- Service providers
+- Network automation teams
+
+The project follows best practices for:
+- Code organization and modularity
+- Error handling and reporting
+- Logging and debugging
+- Test automation
+- Network device interaction
+- Data parsing and validation 
