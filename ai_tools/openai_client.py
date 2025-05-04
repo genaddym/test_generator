@@ -131,13 +131,16 @@ class OpenAIClient:
         with open(guide_file, "w") as f:
             f.write(implementation_guide)
     
-    def create_deciphers(self, test_folder_path: str) -> None:
+    def create_deciphers(self, test_folder_path: str) -> list:
         """
         For each step in the implementation guide, ask the AI to generate a decipher and unit test,
         then create appropriate folders and files for the implementation.
         
         Args:
             test_folder_path (str): Path to the test folder containing the implementation guide
+            
+        Returns:
+            list: List of paths to the generated unit test files
         """
         # Read project context
         with open("project_description.txt", "r") as f:
@@ -147,11 +150,15 @@ class OpenAIClient:
         with open(guide_file, "r") as f:
             steps = json.load(f)
 
+        test_paths = []
         for step in steps:
             # Create folder name from CLI command
             folder_name = step["cli_command"].replace(" ", "_").replace("/", "_")
             command_folder = os.path.join(test_folder_path, folder_name)
             os.makedirs(command_folder, exist_ok=True)
+
+            # Create class name from folder name
+            class_name = ''.join(word.capitalize() for word in folder_name.split('_'))
 
             prompt = f"""
             You are a Python network automation expert specializing in CLI command parsing and testing.
@@ -164,12 +171,17 @@ class OpenAIClient:
             2. A unit test class that tests the decipher using the provided CLI output
             
             Requirements:
-            - The decipher must inherit from DecipherBase
+            - The decipher class must be named exactly '{class_name}Decipher'
             - The decipher must implement the decipher method
+            - The unit test class must be named exactly 'Test{class_name}Decipher'
             - The unit test must use the provided CLI output example
             - Both files must be properly formatted with imports and docstrings
             - The code must be production-ready and follow Python best practices
             - The code should align with the project context and requirements
+            - Do not add any suffixes or prefixes to the class names
+            - Do not include any markdown formatting or explanations in the code
+            - Do not include any code blocks or backticks
+            - The code must be directly executable Python code
             
             IMPORTANT: Your response must contain ONLY the Python code for both files, with no additional text, markdown formatting, or explanations.
             The response should be in this exact format:
@@ -187,7 +199,7 @@ class OpenAIClient:
             response = self.client.chat.completions.create(
                 model="gpt-4-turbo-preview",
                 messages=[
-                    {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing. You must respond with only Python code, no explanations or markdown."},
+                    {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing. You must respond with only executable Python code, no explanations, markdown, or code blocks."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
@@ -217,6 +229,60 @@ class OpenAIClient:
             unit_test_file = os.path.join(command_folder, "unit_test.py")
             with open(unit_test_file, "w") as f:
                 f.write(unit_test_code)
+            
+            test_paths.append(unit_test_file)
+        
+        return test_paths
+
+    def verify_unit_tests(self, test_paths: list) -> dict:
+        """
+        Execute the unit tests and return their results.
+        
+        Args:
+            test_paths (list): List of paths to unit test files
+            
+        Returns:
+            dict: Dictionary containing test results with the following structure:
+                {
+                    'passed': [list of passed test paths],
+                    'failed': [list of failed test paths],
+                    'errors': [list of test paths with errors]
+                }
+        """
+        import unittest
+        from importlib.machinery import SourceFileLoader
+        import sys
+        import os
+
+        results = {
+            'passed': [],
+            'failed': [],
+            'errors': []
+        }
+
+        for test_path in test_paths:
+            try:
+                # Add the test directory to Python path
+                test_dir = os.path.dirname(test_path)
+                if test_dir not in sys.path:
+                    sys.path.append(test_dir)
+
+                # Load the test module
+                test_module = SourceFileLoader("test_module", test_path).load_module()
+
+                # Create a test suite and run it
+                suite = unittest.TestLoader().loadTestsFromModule(test_module)
+                test_result = unittest.TestResult()
+                suite.run(test_result)
+
+                if test_result.wasSuccessful():
+                    results['passed'].append(test_path)
+                else:
+                    results['failed'].append(test_path)
+            except Exception as e:
+                results['errors'].append((test_path, str(e)))
+
+        return results
 
     def generate_test(self, test_folder_path: str) -> str:
         """
@@ -229,4 +295,6 @@ class OpenAIClient:
             str: Generated implementation instructions
         """
         # self.create_implementation_guide(test_folder_path)
-        self.create_deciphers(test_folder_path)
+        unit_test_files = self.create_deciphers(test_folder_path)
+        results = self.verify_unit_tests(unit_test_files)
+        return results
