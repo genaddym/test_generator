@@ -89,22 +89,31 @@ class OpenAIClient:
         Command Outputs:
         {command_outputs}
 
-        Based on the provided project context, test template, and test documentation, generate a detailed implementation guide for creating the test components, divided into steps. The guide should include:
-
-        1. Understand what CLI commands are required to implement the test.
-        2. Required Deciphers. Create a new step for each CLI command and decipher that is required to implement for this CLI command:
-           - Specify the CLI command that is being parsed.
-           - Provide an example of the full CLI command output. Find the corresponding output in the command outputs file.
-           - Specify the required data objects for parsed output.
-           - For each CLI command, a folder with the command name should be created. 
-           Into this folder, a file called `decipher.py`, file called `data_object.py` and a file called `unit_test.py` should be created.
-           - Each decipher should inherit from DecipherBase, implement the `decipher` method and return a data object.
-           - A unit test should be created in the `unit_test.py` file.
+        Based on the provided project context, test template, and test documentation, generate a list of steps for implementing the test.
+        Each step should correspond to a specific CLI command used during the test, and should include:
+          - The CLI command being parsed
+          - You MUST extract and include a complete example of the CLI command output for this command, taken directly from the provided command outputs file. This is REQUIRED for every step.
+          - A description of what needs to be implemented for this command:
+             - Provide an example of the full CLI command output. Find the corresponding output in the command outputs file.
+             - Specify the required data objects for parsed output.
+             - For each CLI command, a folder with the command name should be created. 
+            Into this folder, a file called `decipher.py`, file called `data_object.py` and a file called `unit_test.py` should be created.
+            - Each decipher should inherit from DecipherBase, implement the `decipher` method and return a data object.
+            - A unit test should be created in the `unit_test.py` file.
            - Instruct to use the command outputs to create the unit test.
+          - Instructions for generating a decipher (including class structure and inheritance)
+          - Instructions for generating the required data object(s)
+          - Instructions for generating a unit test for the decipher, using the command outputs as examples
 
+        Output the steps as a JSON array, where each element is an object with the following fields:
+          - cli_command: The CLI command string
+          - cli_output_example: The full example output for this command, extracted from the command outputs file. This field is REQUIRED.
+          - description: A brief description of the step.
+          - decipher_instructions: Instructions for implementing the decipher
+          - data_object_instructions: Instructions for implementing the data object(s)
+          - unit_test_instructions: Instructions for implementing the unit test
 
-
-        Format the output as a markdown document with clear sections and subsections.
+        The output should be valid JSON, suitable for parsing and further processing in Python.
         """
         
         response = self.client.chat.completions.create(
@@ -116,13 +125,99 @@ class OpenAIClient:
             temperature=0.2,
         )
         
-        # Save the implementation guide to a file
+        # Save the implementation guide to a JSON file
         implementation_guide = response.choices[0].message.content
-        guide_file = os.path.join(test_folder_path, "implementation_guide.md")
-        
+        guide_file = os.path.join(test_folder_path, "implementation_guide.json")
         with open(guide_file, "w") as f:
             f.write(implementation_guide)
     
+    def create_deciphers(self, test_folder_path: str) -> None:
+        """
+        For each step in the implementation guide, ask the AI to generate a decipher and unit test,
+        then create appropriate folders and files for the implementation.
+        
+        Args:
+            test_folder_path (str): Path to the test folder containing the implementation guide
+        """
+        # Read project context
+        with open("project_description.txt", "r") as f:
+            project_context = f.read()
+
+        guide_file = os.path.join(test_folder_path, "implementation_guide.json")
+        with open(guide_file, "r") as f:
+            steps = json.load(f)
+
+        for step in steps:
+            # Create folder name from CLI command
+            folder_name = step["cli_command"].replace(" ", "_").replace("/", "_")
+            command_folder = os.path.join(test_folder_path, folder_name)
+            os.makedirs(command_folder, exist_ok=True)
+
+            prompt = f"""
+            You are a Python network automation expert specializing in CLI command parsing and testing.
+            
+            Project Context:
+            {project_context}
+            
+            Based on the following step details, generate two Python files:
+            1. A decipher class that inherits from DecipherBase and implements the decipher method
+            2. A unit test class that tests the decipher using the provided CLI output
+            
+            Requirements:
+            - The decipher must inherit from DecipherBase
+            - The decipher must implement the decipher method
+            - The unit test must use the provided CLI output example
+            - Both files must be properly formatted with imports and docstrings
+            - The code must be production-ready and follow Python best practices
+            - The code should align with the project context and requirements
+            
+            IMPORTANT: Your response must contain ONLY the Python code for both files, with no additional text, markdown formatting, or explanations.
+            The response should be in this exact format:
+            
+            # decipher.py
+            [Python code for decipher.py]
+            
+            # unit_test.py
+            [Python code for unit_test.py]
+            
+            Step details:
+            {json.dumps(step, indent=2)}
+            """
+            
+            response = self.client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing. You must respond with only Python code, no explanations or markdown."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+            )
+            
+            # Extract code from response
+            content = response.choices[0].message.content
+            
+            # Split into files using the file markers
+            parts = content.split("# decipher.py")
+            if len(parts) != 2:
+                raise ValueError("AI response did not contain decipher.py marker")
+            
+            decipher_part = parts[1].split("# unit_test.py")
+            if len(decipher_part) != 2:
+                raise ValueError("AI response did not contain unit_test.py marker")
+            
+            decipher_code = decipher_part[0].strip()
+            unit_test_code = decipher_part[1].strip()
+            
+            # Save decipher code
+            decipher_file = os.path.join(command_folder, "decipher.py")
+            with open(decipher_file, "w") as f:
+                f.write(decipher_code)
+            
+            # Save unit test code
+            unit_test_file = os.path.join(command_folder, "unit_test.py")
+            with open(unit_test_file, "w") as f:
+                f.write(unit_test_code)
+
     def generate_test(self, test_folder_path: str) -> str:
         """
         Generate test implementation and return the implementation guide content.
@@ -133,10 +228,5 @@ class OpenAIClient:
         Returns:
             str: Generated implementation instructions
         """
-        # Create the implementation guide file
-        self.create_implementation_guide(test_folder_path)
-        
-        # Read and return the generated guide
-        guide_file = os.path.join(test_folder_path, "implementation_guide.md")
-        with open(guide_file, "r") as f:
-            return f.read() 
+        # self.create_implementation_guide(test_folder_path)
+        self.create_deciphers(test_folder_path)
