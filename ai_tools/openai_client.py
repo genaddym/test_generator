@@ -131,17 +131,27 @@ class OpenAIClient:
         with open(guide_file, "w") as f:
             f.write(implementation_guide)
     
-    def create_deciphers(self, test_folder_path: str) -> list:
+    def create_deciphers(self, test_folder_path: str) -> dict:
         """
         For each step in the implementation guide, ask the AI to generate a decipher and unit test,
-        then create appropriate folders and files for the implementation.
+        then create appropriate folders and files for the implementation. Verify the tests and request
+        fixes if needed.
         
         Args:
             test_folder_path (str): Path to the test folder containing the implementation guide
             
         Returns:
-            list: List of paths to the generated unit test files
+            dict: Dictionary containing test results with the following structure:
+                {
+                    'passed': [list of passed test paths],
+                    'failed': [list of failed test paths],
+                    'errors': [list of test paths with errors]
+                }
         """
+        import unittest
+        from importlib.machinery import SourceFileLoader
+        import sys
+
         # Read project context
         with open("project_description.txt", "r") as f:
             project_context = f.read()
@@ -150,7 +160,12 @@ class OpenAIClient:
         with open(guide_file, "r") as f:
             steps = json.load(f)
 
-        test_paths = []
+        results = {
+            'passed': [],
+            'failed': [],
+            'errors': []
+        }
+
         for step in steps:
             # Create folder name from CLI command
             folder_name = step["cli_command"].replace(" ", "_").replace("/", "_")
@@ -160,6 +175,7 @@ class OpenAIClient:
             # Create class name from folder name
             class_name = ''.join(word.capitalize() for word in folder_name.split('_'))
 
+            # Generate initial implementation
             prompt = f"""
             You are a Python network automation expert specializing in CLI command parsing and testing.
             
@@ -196,43 +212,90 @@ class OpenAIClient:
             {json.dumps(step, indent=2)}
             """
             
-            response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[
-                    {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing. You must respond with only executable Python code, no explanations, markdown, or code blocks."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-            )
-            
-            # Extract code from response
-            content = response.choices[0].message.content
-            
-            # Split into files using the file markers
-            parts = content.split("# decipher.py")
-            if len(parts) != 2:
-                raise ValueError("AI response did not contain decipher.py marker")
-            
-            decipher_part = parts[1].split("# unit_test.py")
-            if len(decipher_part) != 2:
-                raise ValueError("AI response did not contain unit_test.py marker")
-            
-            decipher_code = decipher_part[0].strip()
-            unit_test_code = decipher_part[1].strip()
-            
-            # Save decipher code
-            decipher_file = os.path.join(command_folder, "decipher.py")
-            with open(decipher_file, "w") as f:
-                f.write(decipher_code)
-            
-            # Save unit test code
-            unit_test_file = os.path.join(command_folder, "unit_test.py")
-            with open(unit_test_file, "w") as f:
-                f.write(unit_test_code)
-            
-            test_paths.append(unit_test_file)
-        
-        return test_paths
+            messages = [
+                {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing. You must respond with only executable Python code, no explanations, markdown, or code blocks."},
+                {"role": "user", "content": prompt}
+            ]
+
+            max_attempts = 3
+            attempt = 0
+            while attempt < max_attempts:
+                response = self.client.chat.completions.create(
+                    model="gpt-4-turbo-preview",
+                    messages=messages,
+                    temperature=0.2,
+                )
+                
+                # Extract code from response
+                content = response.choices[0].message.content
+                
+                # Split into files using the file markers
+                parts = content.split("# decipher.py")
+                if len(parts) != 2:
+                    raise ValueError("AI response did not contain decipher.py marker")
+                
+                decipher_part = parts[1].split("# unit_test.py")
+                if len(decipher_part) != 2:
+                    raise ValueError("AI response did not contain unit_test.py marker")
+                
+                decipher_code = decipher_part[0].strip()
+                unit_test_code = decipher_part[1].strip()
+                
+                # Save decipher code
+                decipher_file = os.path.join(command_folder, "decipher.py")
+                with open(decipher_file, "w") as f:
+                    f.write(decipher_code)
+                
+                # Save unit test code
+                unit_test_file = os.path.join(command_folder, "unit_test.py")
+                with open(unit_test_file, "w") as f:
+                    f.write(unit_test_code)
+
+                # Verify the implementation
+                try:
+                    # Add the test directory to Python path
+                    if command_folder not in sys.path:
+                        sys.path.append(command_folder)
+
+                    # Load the test module
+                    test_module = SourceFileLoader("test_module", unit_test_file).load_module()
+
+                    # Create a test suite and run it
+                    suite = unittest.TestLoader().loadTestsFromModule(test_module)
+                    test_result = unittest.TestResult()
+                    suite.run(test_result)
+
+                    if test_result.wasSuccessful():
+                        results['passed'].append(unit_test_file)
+                        break
+                    else:
+                        error_context = f"Test {unit_test_file} failed during execution"
+                except Exception as e:
+                    error_context = f"Test {unit_test_file} had an error: {str(e)}"
+
+                # If we got here, the test failed or had an error
+                if attempt < max_attempts - 1:
+                    # Add the error context to the messages for the next attempt
+                    messages.append({"role": "assistant", "content": content})
+                    messages.append({
+                        "role": "user",
+                        "content": f"""
+                        The previous implementation had issues:
+                        {error_context}
+                        
+                        Please provide a fixed version of both files that addresses these issues.
+                        Keep the same class names and ensure the code is directly executable.
+                        """
+                    })
+                    attempt += 1
+                else:
+                    if test_result.wasSuccessful():
+                        results['passed'].append(unit_test_file)
+                    else:
+                        results['failed'].append(unit_test_file)
+                    break
+
+        return results
 
     def verify_unit_tests(self, test_paths: list) -> dict:
         """
@@ -295,6 +358,4 @@ class OpenAIClient:
             str: Generated implementation instructions
         """
         # self.create_implementation_guide(test_folder_path)
-        unit_test_files = self.create_deciphers(test_folder_path)
-        results = self.verify_unit_tests(unit_test_files)
-        return results
+        self.create_deciphers(test_folder_path)
