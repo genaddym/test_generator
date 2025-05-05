@@ -1,0 +1,10 @@
+[
+  {
+    "input_parameters": "",
+    "cli_command": "show isis interfaces",
+    "cli_output_example": "  Instance 33287:\r\n    Interface                                          State    Type           Level\r\n    bundle-178                                         Up       point-to-point L2       \r\n    bundle-247                                         Up       point-to-point L2       \r\n    bundle-349                                         Up       point-to-point L2       \r\n    bundle-352                                         Up       point-to-point L2       \r\n    bundle-355                                         Up       point-to-point L2       \r\n    bundle-742                                         Up       point-to-point L2       \r\n    bundle-745                                         Up       point-to-point L2 ",
+    "description": "Retrieve all ISIS enabled interfaces.",
+    "decipher_instructions": "The decipher should inherit from DecipherBase, implement the `decipher` method, and return a JSON dict representing the ISIS enabled interfaces per ISIS instance ID.",
+    "unit_test_instructions": "Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example."
+  }
+]

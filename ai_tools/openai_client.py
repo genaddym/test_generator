@@ -144,8 +144,8 @@ class OpenAIClient:
             dict: Dictionary containing test results with the following structure:
                 {
                     'passed': [list of passed test paths],
-                    'failed': [list of failed test paths],
-                    'errors': [list of test paths with errors]
+                    'failed': [list of tuples (test_path, failure_details)],
+                    'errors': [list of tuples (test_path, error_message)]
                 }
         """
         import unittest
@@ -266,11 +266,35 @@ class OpenAIClient:
                     suite.run(test_result)
 
                     if test_result.wasSuccessful():
+                        print(f"\nTest {unit_test_file} PASSED")
+                        print(f"Tests run: {test_result.testsRun}")
                         results['passed'].append(unit_test_file)
                         break
                     else:
-                        error_context = f"Test {unit_test_file} failed during execution"
+                        print(f"\nTest {unit_test_file} FAILED")
+                        print(f"Tests run: {test_result.testsRun}")
+                        print("Failures:")
+                        for failure in test_result.failures:
+                            print(f"  - {failure[0]}")
+                            print(f"    {failure[1]}")
+                        print("Errors:")
+                        for error in test_result.errors:
+                            print(f"  - {error[0]}")
+                            print(f"    {error[1]}")
+                        
+                        error_context = f"""
+                        Test {unit_test_file} failed during execution:
+                        Tests run: {test_result.testsRun}
+                        Failures: {len(test_result.failures)}
+                        Errors: {len(test_result.errors)}
+                        """
+                        for failure in test_result.failures:
+                            error_context += f"\nFailure in {failure[0]}:\n{failure[1]}"
+                        for error in test_result.errors:
+                            error_context += f"\nError in {error[0]}:\n{error[1]}"
                 except Exception as e:
+                    print(f"\nTest {unit_test_file} ERROR")
+                    print(f"Error: {str(e)}")
                     error_context = f"Test {unit_test_file} had an error: {str(e)}"
 
                 # If we got here, the test failed or had an error
@@ -292,7 +316,7 @@ class OpenAIClient:
                     if test_result.wasSuccessful():
                         results['passed'].append(unit_test_file)
                     else:
-                        results['failed'].append(unit_test_file)
+                        results['failed'].append((unit_test_file, error_context))
                     break
 
         return results
