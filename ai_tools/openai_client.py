@@ -4,8 +4,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import json
 
-# OPENAI_MODEL = "gpt-4.1-mini"
-OPENAI_MODEL = "gpt-4-turbo"
+OPENAI_MODEL = "gpt-4.1-mini"
+# OPENAI_MODEL = "gpt-4-turbo"
 
 
 class OpenAIClient:
