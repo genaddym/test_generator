@@ -4,6 +4,10 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import json
 
+# OPENAI_MODEL = "gpt-4.1-mini"
+OPENAI_MODEL = "gpt-4-turbo"
+
+
 class OpenAIClient:
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -98,7 +102,8 @@ class OpenAIClient:
              - Specify the required data objects for parsed output.
              - For each CLI command, a folder with the command name should be created. 
             Into this folder, a file called `decipher.py`, file called `data_object.py` and a file called `unit_test.py` should be created.
-            - Each decipher should inherit from DecipherBase, implement the `decipher` method and return a data object.
+            - Each decipher should inherit from Decipher.
+            - IMPORTANT: Use exact import 'from decipher_base import Decipher' in the decipher file.
             - A unit test should be created in the `unit_test.py` file.
            - Instruct to use the command outputs to create the unit test.
           - Instructions for generating a decipher (including class structure and inheritance)
@@ -116,22 +121,23 @@ class OpenAIClient:
         The output should be valid JSON, suitable for parsing and further processing in Python.
         """
         
+        print("Sending prompt to OpenAI...")
         response = self.client.chat.completions.create(
-            model="gpt-4-turbo-preview",
+            model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "You are a network testing expert that helps create test implementations."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,
+            temperature=0.1
         )
-        
+        print("Received response from OpenAI")
         # Save the implementation guide to a JSON file
         implementation_guide = response.choices[0].message.content
         guide_file = os.path.join(test_folder_path, "implementation_guide.json")
         with open(guide_file, "w") as f:
             f.write(implementation_guide)
     
-    def create_deciphers(self, test_folder_path: str) -> dict:
+    def create_deciphers(self, test_folder_path: str, command_id: Optional[str] = None) -> dict:
         """
         For each step in the implementation guide, ask the AI to generate a decipher and unit test,
         then create appropriate folders and files for the implementation. Verify the tests and request
@@ -139,6 +145,7 @@ class OpenAIClient:
         
         Args:
             test_folder_path (str): Path to the test folder containing the implementation guide
+            command_id (Optional[str]): If specified, only generate decipher for this command ID
             
         Returns:
             dict: Dictionary containing test results with the following structure:
@@ -159,6 +166,12 @@ class OpenAIClient:
         guide_file = os.path.join(test_folder_path, "implementation_guide.json")
         with open(guide_file, "r") as f:
             steps = json.load(f)
+
+        # Filter steps if command_id is specified
+        if command_id is not None:
+            steps = [step for step in steps if step["command_id"] == command_id]
+            if not steps:
+                raise ValueError(f"No step found with command_id: {command_id}")
 
         results = {
             'passed': [],
@@ -187,7 +200,7 @@ class OpenAIClient:
             2. A unit test class that tests the decipher using the provided CLI output
             
             Requirements:
-            - The decipher class must be named exactly '{class_name}Decipher'
+            - The decipher class must be named '{class_name}Decipher'. All non-alphanumeric characters should be removed.
             - The decipher must implement the decipher method
             - The unit test class must be named exactly 'Test{class_name}Decipher'
             - The unit test must use the provided CLI output example
@@ -217,15 +230,16 @@ class OpenAIClient:
                 {"role": "user", "content": prompt}
             ]
 
-            max_attempts = 3
+            max_attempts = 5
             attempt = 0
             while attempt < max_attempts:
+                print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {max_attempts}")
                 response = self.client.chat.completions.create(
-                    model="gpt-4-turbo-preview",
+                    model=OPENAI_MODEL,
                     messages=messages,
-                    temperature=0.2,
+                    temperature=0.1
                 )
-                
+                print("Received response from OpenAI")
                 # Extract code from response
                 content = response.choices[0].message.content
                 
@@ -371,7 +385,7 @@ class OpenAIClient:
 
         return results
 
-    def generate_test(self, test_folder_path: str) -> str:
+    def generate_test(self, test_folder_path: str, command_id: Optional[str] = None) -> str:
         """
         Generate test implementation and return the implementation guide content.
         
@@ -382,4 +396,4 @@ class OpenAIClient:
             str: Generated implementation instructions
         """
         # self.create_implementation_guide(test_folder_path)
-        self.create_deciphers(test_folder_path)
+        self.create_deciphers(test_folder_path, command_id=command_id)
