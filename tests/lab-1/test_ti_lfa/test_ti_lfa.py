@@ -83,7 +83,7 @@ class TestTiLfa:
             cli_session = device_manager.cli_sessions[device_name]
 
             instance_id = cli_session.send_command(
-                        command=f"show config protocols isis",
+                        command="show config protocols isis",
                         decipher=ShowConfigProtocolsIsisDecipher,
                     )
             logger.info(f"ISIS instance ID: {instance_id}")
@@ -149,7 +149,7 @@ class TestTiLfa:
 
             logger.info(f"{device_name}: Retrieving all ISIS enabled interfaces...")
             interfaces = cli_session.send_command(
-                command=f"show isis interfaces",
+                command="show isis interfaces",
                 decipher=ShowIsisInterfacesDecipher,
             )
             logger.debug(f"ISIS enabled interfaces: {interfaces}")
