@@ -16,6 +16,7 @@ from orbital.testing.topology.topology_manager import TopologyManager
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.absolute()))
 
 from orbital.tests.conftest import DEVICE_CONFIG, TOPOLOGY_CONFIG
+
 from orbital.testing.topology.topology_validators.topology_validation_types import (
     TopologyValidationType,
 )
@@ -24,6 +25,8 @@ from orbital.testing.topology.topology_validators.network_topology_verification 
 )
 
 # Import deciphers and data objects
+from show_config_protocols_isis.decipher import ShowConfigProtocolsIsisDecipher
+
 
 logger = logging.getLogger()
 
@@ -32,7 +35,7 @@ TOPOLOGY_CONFIG_FILE = Path("lab-1") / "resources" / "lab-8.1" / "topology.json"
 
 
 
-class TestAnycastSid:
+class TestTiLfa:
     """
     Test description
     """
@@ -42,7 +45,7 @@ class TestAnycastSid:
         [(DEVICE_CONFIG_FILE, TOPOLOGY_CONFIG_FILE)],
         indirect=True,
     )
-    def test_template(
+    def test_ti_lfa(
         self, device_manager: DeviceManager, topology_manager: TopologyManager
     ):
         """
@@ -59,16 +62,11 @@ class TestAnycastSid:
 
         """
 
-        # always start with a validation of the topology
         logger.info("\n\nValidating topology")
         NetworkTopologyVerification.validate_topology(topology_manager.inventory_manager.devices,
                                                       validation_types=[TopologyValidationType.SYSTEM_STATUS])
 
-
-
-        # example of getting devices by role and vendor
-        drivenets_pcrs = topology_manager.get_devices(
-            roles=[Roles.PCR],
+        devices = topology_manager.get_devices(
             vendors=[Vendors.DRIVENETS],
         )
 
@@ -77,19 +75,41 @@ class TestAnycastSid:
         all_errors = []
         device_status = {}  # Track pass/fail status for each device
 
-        # Test all devices and collect errors instead of stopping at the first error
-        for device in drivenets_pcrs:
+        for device in devices:
             device_name = device.name
             device_status[device_name] = {"passed": True, "errors": []}
             tested_devices.add(device_name)
             logger.info(f"\n\nVerifying device {device_name} ...")
             cli_session = device_manager.cli_sessions[device_name]
 
-            # example of sending a command and deciphering the output
-            bgp_route = cli_session.send_command(
-                        command=f"show bgp route {prefix}",
-                        decipher=ShowBgpRouteDecipher,
+            instance_id = cli_session.send_command(
+                        command=f"show config protocols isis",
+                        decipher=ShowConfigProtocolsIsisDecipher,
                     )
+            logger.info(f"ISIS instance ID: {instance_id}")
+
+            # Validate TI-LFA for both IPv4 and IPv6
+            self._validate_ti_lfa_config(
+                device_name=device_name,
+                cli_session=cli_session,
+                instance_id=instance_id,
+                address_family="ipv4-unicast",
+                decipher=ShowConfigProtocolsIsisInstanceInstanceIdAddressfamilyIpv4unicastTifastrerouteDecipher,
+                device_status=device_status,
+                all_errors=all_errors
+            )
+
+            self._validate_ti_lfa_config(
+                device_name=device_name,
+                cli_session=cli_session,
+                instance_id=instance_id,
+                address_family="ipv6-unicast",
+                decipher=ShowConfigProtocolsIsisInstanceInstanceIdAddressfamilyIpv6unicastTifastrerouteDecipher,
+                device_status=device_status,
+                all_errors=all_errors
+            )
+
+            
 
         # If we collected any errors, raise an assertion with all errors
         if all_errors:
@@ -114,3 +134,45 @@ class TestAnycastSid:
 
         logger.info("All verifications passed successfully!")
         logger.info("==============================")
+
+    def _validate_ti_lfa_config(
+        self,
+        device_name: str,
+        cli_session,
+        instance_id: str,
+        address_family: str,
+        decipher,
+        device_status: dict,
+        all_errors: list
+    ):
+        """
+        Validate TI-LFA configuration for a given address family.
+
+        :param device_name: Name of the device being tested
+        :param cli_session: CLI session for the device
+        :param instance_id: ISIS instance ID
+        :param address_family: Address family to validate (ipv4-unicast or ipv6-unicast)
+        :param decipher: Decipher class to use for parsing the output
+        :param device_status: Dictionary tracking device status
+        :param all_errors: List to collect all validation errors
+        """
+        logger.info(f"Validate that TI-LFA is configured for {address_family} under the ISIS {instance_id}...")
+        ti_lfa_config = cli_session.send_command(
+            command=f"show config protocols isis instance {instance_id} address-family {address_family} ti-fast-reroute",
+            decipher=decipher,
+        )
+
+        # Validate TI-LFA configuration
+        if ti_lfa_config.get('admin_state') != 'enabled':
+            error_msg = f"Device {device_name}: TI-LFA admin-state is not enabled for {address_family}"
+            device_status[device_name]["passed"] = False
+            device_status[device_name]["errors"].append(error_msg)
+            all_errors.append(error_msg)
+
+        if ti_lfa_config.get('protection_mode') != 'link':
+            error_msg = f"Device {device_name}: TI-LFA protection-mode is not set to 'link' for {address_family}"
+            device_status[device_name]["passed"] = False
+            device_status[device_name]["errors"].append(error_msg)
+            all_errors.append(error_msg)
+
+        logger.info(f"TI-LFA {address_family} configuration validated successfully")
