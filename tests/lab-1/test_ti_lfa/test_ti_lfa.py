@@ -109,7 +109,32 @@ class TestTiLfa:
                 all_errors=all_errors
             )
 
-            
+            # Validate TI-LFA operational status
+            self._validate_ti_lfa_operational_status(
+                device_name=device_name,
+                cli_session=cli_session,
+                instance_id=instance_id,
+                device_status=device_status,
+                all_errors=all_errors
+            )
+
+            logger.info("Retrieving all ISIS enabled interfaces...")
+            interfaces = cli_session.send_command(
+                command=f"show isis interfaces",
+                decipher=ShowIsisInterfacesDecipher,
+            )
+            logger.debug(f"ISIS enabled interfaces: {interfaces}")
+
+            for interface in interfaces:
+                logger.info(f"Validating TI-LFA configuration for interface {interface}...")
+                self._validate_interface_config(
+                    device_name=device_name,
+                    cli_session=cli_session,
+                    instance_id=instance_id,
+                    interface=interface,
+                    device_status=device_status,
+                    all_errors=all_errors
+                )
 
         # If we collected any errors, raise an assertion with all errors
         if all_errors:
@@ -176,3 +201,97 @@ class TestTiLfa:
             all_errors.append(error_msg)
 
         logger.info(f"TI-LFA {address_family} configuration validated successfully")
+
+    def _validate_interface_config(
+        self,
+        device_name: str,
+        cli_session,
+        instance_id: str,
+        interface: str,
+        device_status: dict,
+        all_errors: list,
+    ):
+        """
+        Validate fast-reroute backup-candidate configuration for an interface.
+
+        :param device_name: Name of the device being tested
+        :param cli_session: CLI session for the device
+        :param instance_id: ISIS instance ID
+        :param interface: Interface name to validate
+        :param device_status: Dictionary tracking device status
+        :param all_errors: List to collect all validation errors
+        """
+        logger.info(f"Validating fast-reroute configuration for interface {interface}...")
+        interface_config = cli_session.send_command(
+            command=f"show config protocols isis instance {instance_id} interface {interface}",
+            decipher=ShowConfigProtocolsIsisInstanceInstanceIdInterfaceInterfaceNameDecipher,
+        )
+
+        # Validate IPv4 configuration
+        ipv4_config = interface_config.get("ipv4-unicast", {})
+        if not ipv4_config.get("fast-reroute backup-candidate", False):
+            error_msg = f"Device {device_name}: Fast-reroute backup-candidate is not enabled for IPv4 on interface {interface}"
+            device_status[device_name]["passed"] = False
+            device_status[device_name]["errors"].append(error_msg)
+            all_errors.append(error_msg)
+
+        # Validate IPv6 configuration
+        ipv6_config = interface_config.get("ipv6-unicast", {})
+        if not ipv6_config.get("fast-reroute backup-candidate", False):
+            error_msg = f"Device {device_name}: Fast-reroute backup-candidate is not enabled for IPv6 on interface {interface}"
+            device_status[device_name]["passed"] = False
+            device_status[device_name]["errors"].append(error_msg)
+            all_errors.append(error_msg)
+
+        logger.info(f"Fast-reroute configuration validated successfully for interface {interface}")
+
+    def _validate_ti_lfa_operational_status(
+        self,
+        device_name: str,
+        cli_session,
+        instance_id: str,
+        device_status: dict,
+        all_errors: list,
+    ):
+        """
+        Validate TI-LFA operational status in ISIS instance.
+
+        :param device_name: Name of the device being tested
+        :param cli_session: CLI session for the device
+        :param instance_id: ISIS instance ID
+        :param device_status: Dictionary tracking device status
+        :param all_errors: List to collect all validation errors
+        """
+        logger.info(f"Validating TI-LFA operational status for ISIS instance {instance_id}...")
+        ti_lfa_status = cli_session.send_command(
+            command=f"show isis instance {instance_id}",
+            decipher=ShowIsisInstanceInstanceIdDecipher,
+        )
+
+        # Validate IPv4 TI-LFA status
+        ipv4_status = ti_lfa_status.get("IPv4", {})
+        if ipv4_status.get("status") != "enabled":
+            error_msg = f"Device {device_name}: TI-LFA is not enabled for IPv4"
+            device_status[device_name]["passed"] = False
+            device_status[device_name]["errors"].append(error_msg)
+            all_errors.append(error_msg)
+        elif not ipv4_status.get("link-protection", False):
+            error_msg = f"Device {device_name}: TI-LFA link-protection is not enabled for IPv4"
+            device_status[device_name]["passed"] = False
+            device_status[device_name]["errors"].append(error_msg)
+            all_errors.append(error_msg)
+
+        # Validate IPv6 TI-LFA status
+        ipv6_status = ti_lfa_status.get("IPv6", {})
+        if ipv6_status.get("status") != "enabled":
+            error_msg = f"Device {device_name}: TI-LFA is not enabled for IPv6"
+            device_status[device_name]["passed"] = False
+            device_status[device_name]["errors"].append(error_msg)
+            all_errors.append(error_msg)
+        elif not ipv6_status.get("link-protection", False):
+            error_msg = f"Device {device_name}: TI-LFA link-protection is not enabled for IPv6"
+            device_status[device_name]["passed"] = False
+            device_status[device_name]["errors"].append(error_msg)
+            all_errors.append(error_msg)
+
+        logger.info(f"TI-LFA operational status validated successfully for ISIS instance {instance_id}")

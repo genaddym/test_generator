@@ -70,10 +70,10 @@ protocols
   ```
       interface ISIS_BUNDLE
         address-family ipv4-unicast
-          fast-reroute backup-candidate disabled
+          fast-reroute backup-candidate enabled
         !
         address-family ipv6-unicast
-          fast-reroute backup-candidate disabled
+          fast-reroute backup-candidate enabled
   ```
 
 5. #### Validate in the ISIS INSTANCE_ID operational database that TI-LFA is enabled for IPv4 and IPv6 for link-protection.
