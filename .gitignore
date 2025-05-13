@@ -6,3 +6,15 @@ __pycache__/
 *.pyd
 *.pyw
 *.pyz
+.DS_Store
+.env
+.vscode/
+testing/.DS_Store
+testing/common/.DS_Store
+testing/helpers/.DS_Store
+testing/helpers/deciphers/.DS_Store
+tests/.DS_Store
+tests/lab-1/.DS_Store
+tests/lab-1/resources/.DS_Store
+tests/lab-1/test_ti_lfa/.DS_Store
+venv/
