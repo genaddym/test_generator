@@ -3,6 +3,7 @@ from typing import Optional, Tuple
 from openai import OpenAI
 from dotenv import load_dotenv
 import yaml
+import importlib.util
 
 OPENAI_MODEL = "gpt-4.1-mini"
 # OPENAI_MODEL = "gpt-4-turbo"
@@ -65,13 +66,6 @@ class OpenAIClient:
         with open(guide_file, "r") as f:
             steps = yaml.safe_load(f)
 
-        # Add unit test instructions to each step if not already present
-        for step in steps:
-            step["unit_test_instructions"] = "Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example."
-
-            if "decipher_instructions" in step:
-                step["decipher_instructions"] = "The decipher should inherit from Decipher, implement the `decipher` method, and " + step["decipher_instructions"]
-
         # Filter steps if command_id is specified
         if command_id is not None:
             steps = [step for step in steps if step["command_id"] == command_id]
@@ -79,6 +73,11 @@ class OpenAIClient:
                 raise ValueError(f"No step found with command_id: {command_id}")
 
         for step in steps:
+            step["unit_test_instructions"] = "Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example."
+
+            if "decipher_instructions" in step:
+                step["decipher_instructions"] = "The decipher should inherit from Decipher, implement the `decipher` method, and " + step["decipher_instructions"]
+
             # Create folder name from CLI command
             folder_name = step["cli_command"].replace(" ", "_").replace("/", "_")
             command_folder = os.path.join(test_folder_path, folder_name)
@@ -116,13 +115,15 @@ class OpenAIClient:
             - Both files must be properly formatted with imports and docstrings
             - The class docstring must include the CLI command being parsed (e.g., 'Parser for "show version" command')
             - The code must be production-ready and follow Python best practices
-            - The code should align with the project context and requirements
+            - The code must align with the project context and requirements
             - Do not add any suffixes or prefixes to the class names
             - Do not include any markdown formatting or explanations in the code
             - Do not include any code blocks or backticks
             - The code must be directly executable Python code
             - IMPORTANT: In the unit test, define the expected output as a single line variable named 'expected_output' with a valid JSON string
-            - Example of expected_output format: 'expected_output = {"key": "value", "nested": {"key": "value"}}'
+            - Example of expected_output format: expected_output = {{"key": "value", "nested": {{"key": "value"}}}}
+            - IMPORTANT: In the unit test file, use relative imports for importing the decipher class (e.g., 'from .decipher import ShowLldpNeighborsDecipher')
+            - IMPORTANT: In the decipher file, import the base class using 'from tests.base.decipher import Decipher'
             
             IMPORTANT: Your response must contain ONLY the Python code for both files, with no additional text, markdown formatting, or explanations.
             The response should be in this exact format:
@@ -144,47 +145,62 @@ class OpenAIClient:
 
             max_attempts = 5
             attempt = 0
+
             while attempt < max_attempts:
-                print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {max_attempts}")
-                response = self.client.chat.completions.create(
-                    model=OPENAI_MODEL,
-                    messages=messages,
-                    temperature=0.1
-                )
-                print("Received response from OpenAI")
-                # Extract code from response
-                content = response.choices[0].message.content
-                
-                # Split into files using the file markers
-                parts = content.split("# decipher.py")
-                if len(parts) != 2:
-                    raise ValueError("AI response did not contain decipher.py marker")
-                
-                decipher_part = parts[1].split("# unit_test.py")
-                if len(decipher_part) != 2:
-                    raise ValueError("AI response did not contain unit_test.py marker")
-                
-                decipher_code = decipher_part[0].strip()
-                unit_test_code = decipher_part[1].strip()
-                
-                # Save decipher code
-                decipher_file = os.path.join(command_folder, "decipher.py")
-                with open(decipher_file, "w") as f:
-                    f.write(decipher_code)
-                
-                # Save unit test code
+                # Skip OpenAI for debugging
+                SKIP_OPENAI = True
+                # Skip OpenAI for debugging
                 unit_test_file = os.path.join(command_folder, "unit_test.py")
-                with open(unit_test_file, "w") as f:
-                    f.write(unit_test_code)
+
+                if not SKIP_OPENAI:
+                    print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {max_attempts}")
+                    response = self.client.chat.completions.create(
+                        model=OPENAI_MODEL,
+                        messages=messages,
+                        temperature=0.1
+                    )
+                    print("Received response from OpenAI")
+                    # Extract code from response
+                    content = response.choices[0].message.content
+                    
+                    # Split into files using the file markers
+                    parts = content.split("# decipher.py")
+                    if len(parts) != 2:
+                        raise ValueError("AI response did not contain decipher.py marker")
+                    
+                    decipher_part = parts[1].split("# unit_test.py")
+                    if len(decipher_part) != 2:
+                        raise ValueError("AI response did not contain unit_test.py marker")
+                    
+                    decipher_code = decipher_part[0].strip()
+                    unit_test_code = decipher_part[1].strip()
+                    
+                    # Save decipher code
+                    decipher_file = os.path.join(command_folder, "decipher.py")
+                    with open(decipher_file, "w") as f:
+                        f.write(decipher_code)
+                    
+                    # Save unit test code
+                    with open(unit_test_file, "w") as f:
+                        f.write(unit_test_code)
 
                 # Verify the implementation
                 try:
-                    # Add the test directory to Python path
-                    if command_folder not in sys.path:
-                        sys.path.append(command_folder)
+                    # Add the project root to Python path
+                    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+                    if project_root not in sys.path:
+                        sys.path.insert(0, project_root)
 
-                    # Load the test module
-                    test_module = SourceFileLoader("test_module", unit_test_file).load_module()
+                    # Get the module path relative to project root
+                    rel_path = os.path.relpath(os.path.dirname(unit_test_file), project_root)
+                    module_path = rel_path.replace(os.path.sep, '.')
+                    
+                    # Create a spec for the module
+                    spec = importlib.util.spec_from_file_location(module_path, unit_test_file)
+                    test_module = importlib.util.module_from_spec(spec)
+                    # Set the module's __package__ attribute to enable relative imports
+                    test_module.__package__ = module_path
+                    spec.loader.exec_module(test_module)
 
                     # Create a test suite and run it
                     suite = unittest.TestLoader().loadTestsFromModule(test_module)
@@ -254,7 +270,7 @@ class OpenAIClient:
 
     def verify_unit_tests(self, test_paths: list) -> dict:
         """
-        Execute the unit tests and return their results.
+        Execute the unit tests using pytest and return their results.
         
         Args:
             test_paths (list): List of paths to unit test files
@@ -267,10 +283,10 @@ class OpenAIClient:
                     'errors': [list of test paths with errors]
                 }
         """
-        import unittest
-        from importlib.machinery import SourceFileLoader
+        import pytest
         import sys
         import os
+        from pathlib import Path
 
         results = {
             'passed': [],
@@ -285,15 +301,17 @@ class OpenAIClient:
                 if test_dir not in sys.path:
                     sys.path.append(test_dir)
 
-                # Load the test module
-                test_module = SourceFileLoader("test_module", test_path).load_module()
-
-                # Create a test suite and run it
-                suite = unittest.TestLoader().loadTestsFromModule(test_module)
-                test_result = unittest.TestResult()
-                suite.run(test_result)
-
-                if test_result.wasSuccessful():
+                # Run pytest on the test file
+                test_file = Path(test_path)
+                pytest_args = [
+                    str(test_file),
+                    '-v',
+                    '--tb=short'
+                ]
+                
+                exit_code = pytest.main(pytest_args)
+                
+                if exit_code == 0:
                     results['passed'].append(test_path)
                 else:
                     results['failed'].append(test_path)

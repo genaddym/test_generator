@@ -1,0 +1,32 @@
+- command_id: "1"
+  input_parameters: ""
+  cli_command: "show lldp neighbors"
+  cli_output_example: |
+    Interface     | Neighbor System Name          | Neighbor interface   | Neighbor TTL   |
+    -------------+-------------------------------+----------------------+----------------|
+    ge100-0/0/2/0 | arvc01.site50.cran1           | ge100-0/0/22         | 120            |
+    ge100-0/0/2/1 | arvc01.site50.cran1           | ge100-0/0/21         | 120            |
+    ge10-0/0/3/0  | ar01.site50.cran1.comcast.net | xe-0/2/2             | 120            |
+    ge10-0/0/3/1  | ar01.site50.cran1.comcast.net | xe-0/2/3             | 120            |
+    ge400-0/0/25  | tcr02.site10.cran1            | ge400-0/0/33         | 120            |
+    ge400-0/0/26  | tcr02.site10.cran1            | ge400-0/0/34         | 120            |
+    ge400-0/0/27  |                               |                      |                |
+    ge400-0/0/28  |                               |                      |                |
+    ge400-0/0/33  | tcr01.site10.cran1            | ge400-0/0/33         | 120            |
+    ge400-0/0/34  | tcr01.site10.cran1            | ge400-0/0/34         | 120            |
+  decipher_instructions: "return a JSON dict representing of the cli output"
+
+- command_id: "2"
+  input_parameters: "INTERFACE_NAME"
+  cli_command: "show config interfaces INTERFACE_NAME"
+  cli_output_example: |
+    interfaces
+      ge100-0/0/2/0
+        admin-state enabled
+        bundle-id 217
+        carrier-delay down 0 up 5000
+        description "PHY|100G|AGG-MEMBER|CORE|type:JANUS-P2P|rhost:ar-vc01.site50.cran1|rport:ge100-0/0/22|lagg:de217|ragg:de217"
+        fec rs-fec-544-514
+      !
+    !
+  decipher_instructions: "return a JSON dict representing bundle-ID from the cli output"

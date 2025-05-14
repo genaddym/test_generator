@@ -11,6 +11,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+TEST_NAME = "test_conditional_advertisement_legacy"
+
 def get_user_choice() -> tuple[bool, str | None]:
     """
     Ask user if they want to generate all tests or a specific decipher.
@@ -44,7 +46,7 @@ def main():
         client = OpenAIClient()
         
         # Path to the test folder containing documentation files
-        test_folder = os.path.join("tests", "lab-1", "test_ti_lfa")
+        test_folder = os.path.join("tests", "lab1", TEST_NAME)
         
         # Get user's choice
         is_full_test, command_id = get_user_choice()
