@@ -2,7 +2,7 @@ import os
 from typing import Optional, Tuple
 from openai import OpenAI
 from dotenv import load_dotenv
-import json
+import yaml
 
 OPENAI_MODEL = "gpt-4.1-mini"
 # OPENAI_MODEL = "gpt-4-turbo"
@@ -163,9 +163,16 @@ class OpenAIClient:
         with open("project_description.txt", "r") as f:
             project_context = f.read()
 
-        guide_file = os.path.join(test_folder_path, "implementation_guide.json")
+        guide_file = os.path.join(test_folder_path, "implementation_guide.yml")
         with open(guide_file, "r") as f:
-            steps = json.load(f)
+            steps = yaml.safe_load(f)
+
+        # Add unit test instructions to each step if not already present
+        for step in steps:
+            step["unit_test_instructions"] = "Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example."
+
+            if "decipher_instructions" in step:
+                step["decipher_instructions"] = "The decipher should inherit from Decipher, implement the `decipher` method, and " + step["decipher_instructions"]
 
         # Filter steps if command_id is specified
         if command_id is not None:
@@ -227,7 +234,7 @@ class OpenAIClient:
             [Python code for unit_test.py]
             
             Step details:
-            {json.dumps(step, indent=2)}
+            {yaml.dump(step, default_flow_style=False)}
             """
             
             messages = [
