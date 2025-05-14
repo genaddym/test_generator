@@ -201,10 +201,15 @@ class OpenAIClient:
             
             Requirements:
             - The decipher class must be named '{class_name}Decipher'. All non-alphanumeric characters should be removed.
+            - The class name must use CamelCase format (e.g., 'ShowVersionDecipher' not 'Show-version-decipher')
+            - All JSON keys must use underscores instead of hyphens (e.g., 'command_output' not 'command-output')
+            - The decipher method must be defined exactly as: '@staticmethod def decipher(cli_response: str)'
             - The decipher must implement the decipher method
             - The unit test class must be named exactly 'Test{class_name}Decipher'
             - The unit test must use the provided CLI output example
+            - Unit tests must use pytest framework (not unittest)
             - Both files must be properly formatted with imports and docstrings
+            - The class docstring must include the CLI command being parsed (e.g., 'Parser for "show version" command')
             - The code must be production-ready and follow Python best practices
             - The code should align with the project context and requirements
             - Do not add any suffixes or prefixes to the class names
