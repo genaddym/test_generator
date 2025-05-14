@@ -23,120 +23,6 @@ class OpenAIClient:
         
         self.client = OpenAI(api_key=self.api_key)
     
-    def _find_md_files(self, test_folder_path: str) -> Tuple[str, str]:
-        """
-        Find the test flow and command outputs files in the test folder.
-        
-        Args:
-            test_folder_path (str): Path to the test folder
-            
-        Returns:
-            Tuple[str, str]: Paths to test flow and command outputs files
-            
-        Raises:
-            FileNotFoundError: If required files are not found
-        """
-        md_files = [f for f in os.listdir(test_folder_path) if f.endswith(".md")]
-        
-        if len(md_files) != 2:
-            raise FileNotFoundError(f"Expected exactly 2 .md files in {test_folder_path}, found {len(md_files)}")
-        
-        command_outputs_file = None
-        test_flow_file = None
-        
-        for file in md_files:
-            if "command-outputs" in file.lower():
-                command_outputs_file = os.path.join(test_folder_path, file)
-            else:
-                test_flow_file = os.path.join(test_folder_path, file)
-        
-        if not command_outputs_file or not test_flow_file:
-            raise FileNotFoundError("Could not find both test flow and command outputs files")
-        
-        return test_flow_file, command_outputs_file
-    
-    def create_implementation_guide(self, test_folder_path: str) -> None:
-        """
-        Create an implementation guide based on test documentation and save it to a file.
-        
-        Args:
-            test_folder_path (str): Path to the test folder containing documentation files
-        """
-        # Read project context
-        with open("project_description.txt", "r") as f:
-            project_context = f.read()
-        
-        # Read test template
-        template_path = os.path.join("test_template.py")
-        with open(template_path, "r") as f:
-            test_template = f.read()
-        
-        # Find test documentation files
-        test_flow_file, command_outputs_file = self._find_md_files(test_folder_path)
-        
-        with open(test_flow_file, "r") as f:
-            test_flow = f.read()
-        
-        with open(command_outputs_file, "r") as f:
-            command_outputs = f.read()
-        
-        prompt = f"""
-        Project Context:
-        {project_context}
-
-        Test Template:
-        {test_template}
-
-        Test Documentation:
-        {test_flow}
-
-        Command Outputs:
-        {command_outputs}
-
-        Based on the provided project context, test template, and test documentation, generate a list of steps for implementing the test.
-        Each step should correspond to a specific CLI command used during the test, and should include:
-          - The CLI command being parsed
-          - You MUST extract and include a complete example of the CLI command output for this command, taken directly from the provided command outputs file. This is REQUIRED for every step.
-          - A description of what needs to be implemented for this command:
-             - Provide an example of the full CLI command output. Find the corresponding output in the command outputs file.
-             - Specify the required data objects for parsed output.
-             - For each CLI command, a folder with the command name should be created. 
-            Into this folder, a file called `decipher.py`, file called `data_object.py` and a file called `unit_test.py` should be created.
-            - Each decipher should inherit from Decipher.
-            - IMPORTANT: Use exact import 'from decipher_base import Decipher' in the decipher file.
-            - A unit test should be created in the `unit_test.py` file.
-           - Instruct to use the command outputs to create the unit test.
-          - Instructions for generating a decipher (including class structure and inheritance)
-          - Instructions for generating the required data object(s)
-          - Instructions for generating a unit test for the decipher, using the command outputs as examples
-
-        Output the steps as a JSON array, where each element is an object with the following fields:
-          - cli_command: The CLI command string
-          - cli_output_example: The full example output for this command, extracted from the command outputs file. This field is REQUIRED.
-          - description: A brief description of the step.
-          - decipher_instructions: Instructions for implementing the decipher
-          - data_object_instructions: Instructions for implementing the data object(s)
-          - unit_test_instructions: Instructions for implementing the unit test
-
-        The output should be valid JSON, suitable for parsing and further processing in Python.
-        """
-        
-        print("Sending prompt to OpenAI...")
-        response = self.client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a network testing expert that helps create test implementations."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1
-        )
-        print("Received response from OpenAI")
-        # Save the implementation guide to a JSON file
-        implementation_guide = response.choices[0].message.content
-        guide_file = os.path.join(test_folder_path, "implementation_guide.json")
-        with open(guide_file, "w") as f:
-            f.write(implementation_guide)
-    
     def create_deciphers(self, test_folder_path: str, command_id: Optional[str] = None) -> dict:
         """
         For each step in the implementation guide, ask the AI to generate a decipher and unit test,
@@ -148,16 +34,28 @@ class OpenAIClient:
             command_id (Optional[str]): If specified, only generate decipher for this command ID
             
         Returns:
-            dict: Dictionary containing test results with the following structure:
+            dict: Dictionary containing the steps with additional metadata:
                 {
-                    'passed': [list of passed test paths],
-                    'failed': [list of tuples (test_path, failure_details)],
-                    'errors': [list of tuples (test_path, error_message)]
+                    'steps': [
+                        {
+                            'command_id': str,
+                            'cli_command': str,
+                            'cli_output_example': str,
+                            'decipher_instructions': str,
+                            'unit_test_instructions': str,
+                            'class_name': str,  # The generated class name
+                            'import_path': str,  # The import path for the decipher
+                            'json_example': dict  # Example JSON output from the unit test
+                        },
+                        ...
+                    ]
                 }
         """
         import unittest
         from importlib.machinery import SourceFileLoader
         import sys
+        import re
+        import json
 
         # Read project context
         with open("project_description.txt", "r") as f:
@@ -180,12 +78,6 @@ class OpenAIClient:
             if not steps:
                 raise ValueError(f"No step found with command_id: {command_id}")
 
-        results = {
-            'passed': [],
-            'failed': [],
-            'errors': []
-        }
-
         for step in steps:
             # Create folder name from CLI command
             folder_name = step["cli_command"].replace(" ", "_").replace("/", "_")
@@ -194,6 +86,12 @@ class OpenAIClient:
 
             # Create class name from folder name
             class_name = ''.join(word.capitalize() for word in folder_name.split('_'))
+            step["class_name"] = f"{class_name}Decipher"
+            
+            # Create import path
+            relative_path = os.path.relpath(command_folder, test_folder_path)
+            import_path = relative_path.replace(os.path.sep, '.')
+            step["import_path"] = f"{import_path}.decipher"
 
             # Generate initial implementation
             prompt = f"""
@@ -223,6 +121,8 @@ class OpenAIClient:
             - Do not include any markdown formatting or explanations in the code
             - Do not include any code blocks or backticks
             - The code must be directly executable Python code
+            - IMPORTANT: In the unit test, define the expected output as a single line variable named 'expected_output' with a valid JSON string
+            - Example of expected_output format: 'expected_output = {"key": "value", "nested": {"key": "value"}}'
             
             IMPORTANT: Your response must contain ONLY the Python code for both files, with no additional text, markdown formatting, or explanations.
             The response should be in this exact format:
@@ -294,7 +194,15 @@ class OpenAIClient:
                     if test_result.wasSuccessful():
                         print(f"\nTest {unit_test_file} PASSED")
                         print(f"Tests run: {test_result.testsRun}")
-                        results['passed'].append(unit_test_file)
+                        
+                        # Extract JSON example only from successful tests
+                        json_example_match = re.search(r'expected_output\s*=\s*({[^}]+})', unit_test_code)
+                        if json_example_match:
+                            try:
+                                json_example = json.loads(json_example_match.group(1))
+                                step["json_example"] = json_example
+                            except json.JSONDecodeError:
+                                print(f"Warning: Could not parse JSON example from unit test for {step['command_id']}")
                         break
                     else:
                         print(f"\nTest {unit_test_file} FAILED")
@@ -335,17 +243,14 @@ class OpenAIClient:
                         
                         Please provide a fixed version of both files that addresses these issues.
                         Keep the same class names and ensure the code is directly executable.
+                        Remember to define expected_output as a single line variable with a valid JSON string.
                         """
                     })
                     attempt += 1
                 else:
-                    if test_result.wasSuccessful():
-                        results['passed'].append(unit_test_file)
-                    else:
-                        results['failed'].append((unit_test_file, error_context))
                     break
 
-        return results
+        return {'steps': steps}
 
     def verify_unit_tests(self, test_paths: list) -> dict:
         """
@@ -398,14 +303,5 @@ class OpenAIClient:
         return results
 
     def generate_test(self, test_folder_path: str, command_id: Optional[str] = None) -> str:
-        """
-        Generate test implementation and return the implementation guide content.
-        
-        Args:
-            test_folder_path (str): Path to the test folder containing documentation files
-            
-        Returns:
-            str: Generated implementation instructions
-        """
-        # self.create_implementation_guide(test_folder_path)
+
         self.create_deciphers(test_folder_path, command_id=command_id)
