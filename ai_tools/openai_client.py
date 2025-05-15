@@ -148,15 +148,27 @@ class OpenAIClient:
                 # Split into files using the file markers
                 parts = content.split("# decipher.py")
                 if len(parts) != 2:
-                    raise ValueError("AI response did not contain decipher.py marker")
+                    messages.append({
+                        "role": "user",
+                        "content": "Your response is missing the '# decipher.py' marker. Please provide the response in the correct format with all required sections: # decipher.py, # unit_test.py, and # explanation."
+                    })
+                    continue
                 
                 decipher_part = parts[1].split("# unit_test.py")
                 if len(decipher_part) != 2:
-                    raise ValueError("AI response did not contain unit_test.py marker")
+                    messages.append({
+                        "role": "user",
+                        "content": "Your response is missing the '# unit_test.py' marker. Please provide the response in the correct format with all required sections: # decipher.py, # unit_test.py, and # explanation."
+                    })
+                    continue
                 
                 unit_test_part = decipher_part[1].split("# explanation")
                 if len(unit_test_part) != 2:
-                    raise ValueError("AI response did not contain explanation marker")
+                    messages.append({
+                        "role": "user",
+                        "content": "Your response is missing the '# explanation' marker. Please provide the response in the correct format with all required sections: # decipher.py, # unit_test.py, and # explanation."
+                    })
+                    continue
                 
                 decipher_code = decipher_part[0].strip()
                 unit_test_code = unit_test_part[0].strip()
