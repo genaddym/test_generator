@@ -215,13 +215,14 @@ class OpenAIClient:
                         print(f"Tests run: {test_result.testsRun}")
                         
                         # Extract JSON example only from successful tests
-                        json_example_match = re.search(r'expected_output\s*=\s*({[^}]+})', unit_test_code)
+                        json_example_match = re.search(r'expected_output\s*=\s*({[\s\S]*?"neighbors":\s*\[[\s\S]*?\]\s*})', unit_test_code)
                         if json_example_match:
                             try:
                                 json_example = json.loads(json_example_match.group(1))
                                 step["json_example"] = json_example
-                            except json.JSONDecodeError:
-                                print(f"Warning: Could not parse JSON example from unit test for {step['command_id']}")
+                            except json.JSONDecodeError as e:
+                                print(f"Warning: Could not parse JSON example from unit test for {step['command_id']}: {str(e)}")
+                                print(f"Captured JSON: {json_example_match.group(1)}")
                         break
                     else:
                         print(f"\nTest {unit_test_file} FAILED")
