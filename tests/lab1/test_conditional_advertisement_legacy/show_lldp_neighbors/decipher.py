@@ -19,39 +19,33 @@ class ShowLldpNeighborsDecipher(Decipher):
             dict: Parsed output with key 'neighbors' containing list of neighbor dicts.
         """
         neighbors = []
-        lines = cli_response.strip().splitlines()
-        # Find the line index where header separator is (line with dashes and pluses)
+        lines = [line.rstrip() for line in cli_response.strip().splitlines() if line.strip()]
+        # Find the separator line index (line with dashes and pluses)
         separator_index = None
         for idx, line in enumerate(lines):
-            if set(line.strip()) <= set("-+| "):
+            if set(line.strip()) <= set("-+"):
                 separator_index = idx
                 break
-        if separator_index is None:
+        if separator_index is None or separator_index == 0:
             return {"neighbors": neighbors}
 
-        # Header line is one line above separator
+        # Header line is the line before separator
         header_line = lines[separator_index - 1]
-        # Determine column positions by splitting header line by '|'
+        # Split header by '|' and normalize keys
         headers = [h.strip().lower().replace(" ", "_") for h in header_line.split("|")]
-        # Expected headers: interface, neighbor_system_name, neighbor_interface, neighbor_ttl
-
         # Data lines start after separator line
-        data_lines = lines[separator_index + 1:]
+        data_lines = lines[separator_index + 1 :]
 
         for line in data_lines:
-            if not line.strip():
+            if "|" not in line:
                 continue
-            # Split line by '|'
             parts = [p.strip() for p in line.split("|")]
-            if len(parts) < 4:
+            # Remove empty trailing parts caused by trailing '|'
+            if parts and parts[-1] == "":
+                parts = parts[:-1]
+            if len(parts) != len(headers):
                 continue
-            # Map parts to headers
-            neighbor = {}
-            for i, key in enumerate(headers):
-                if i < len(parts):
-                    neighbor[key] = parts[i]
-                else:
-                    neighbor[key] = ""
+            neighbor = dict(zip(headers, parts))
             neighbors.append(neighbor)
 
         return {"neighbors": neighbors}

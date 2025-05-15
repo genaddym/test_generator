@@ -4,10 +4,12 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import yaml
 import importlib.util
-import unittest
 import sys
 import re
 import json
+import pytest
+from io import StringIO
+import sys
 
 OPENAI_MODEL = "gpt-4.1-mini"
 # OPENAI_MODEL = "gpt-4-turbo"
@@ -144,14 +146,14 @@ class OpenAIClient:
 
             max_attempts = 5
             attempt = 0
-
+            fix_required = False
             while attempt < max_attempts:
                 # Check if decipher file already exists
                 decipher_file = os.path.join(command_folder, "decipher.py")
                 unit_test_file = os.path.join(command_folder, "unit_test.py")
                 files_exist = os.path.exists(decipher_file) and os.path.exists(unit_test_file)
 
-                if not files_exist:
+                if not files_exist or fix_required:
                     print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {max_attempts}")
                     response = self.client.chat.completions.create(
                         model=OPENAI_MODEL,
@@ -205,14 +207,46 @@ class OpenAIClient:
                     spec.loader.exec_module(test_module)
 
                     # Create a test suite and run it
-                    suite = unittest.TestLoader().loadTestsFromModule(test_module)
-                    test_result = unittest.TestResult()
-                    suite.run(test_result)
 
-                    if test_result.wasSuccessful():
+
+                    class ResultCollector:
+                        def __init__(self):
+                            self.passed = []
+                            self.failed = []
+                            self.errors = []
+                            self.output = StringIO()
+                            self.old_stdout = sys.stdout
+                            sys.stdout = self.output
+
+                        def pytest_runtest_logreport(self, report):
+                            if report.when == 'call':  # Only process the actual test call
+                                if report.passed:
+                                    self.passed.append(report.nodeid)
+                                elif report.failed:
+                                    if report.longrepr:
+                                        self.failed.append(f"{report.nodeid}\n{report.longrepr}")
+                                    else:
+                                        self.failed.append(report.nodeid)
+                                elif report.outcome == 'error':
+                                    if report.longrepr:
+                                        self.errors.append(f"{report.nodeid}\n{report.longrepr}")
+                                    else:
+                                        self.errors.append(report.nodeid)
+
+                        def get_output(self):
+                            return self.output.getvalue()
+
+                    collector = ResultCollector()
+                    pytest_args = [
+                        str(unit_test_file),
+                        '-v',
+                        '--tb=short'
+                    ]
+                    exit_code = pytest.main(pytest_args, plugins=[collector])
+                    
+                    if exit_code == 0:
                         print(f"\nTest {unit_test_file} PASSED")
-                        print(f"Tests run: {test_result.testsRun}")
-                        
+                        fix_required = False
                         # Extract JSON example only from successful tests
                         json_example_match = re.search(r'expected_output\s*=\s*({[^{}]*(?:{[^{}]*}[^{}]*)*})', unit_test_code)
                         if json_example_match:
@@ -225,31 +259,24 @@ class OpenAIClient:
                         break
                     else:
                         print(f"\nTest {unit_test_file} FAILED")
-                        print(f"Tests run: {test_result.testsRun}")
-                        print("Failures:")
-                        for failure in test_result.failures:
-                            print(f"  - {failure[0]}")
-                            print(f"    {failure[1]}")
-                        print("Errors:")
-                        for error in test_result.errors:
-                            print(f"  - {error[0]}")
-                            print(f"    {error[1]}")
-                        
                         error_context = f"""
-                        Test {unit_test_file} failed during execution:
-                        Tests run: {test_result.testsRun}
-                        Failures: {len(test_result.failures)}
-                        Errors: {len(test_result.errors)}
+                        Test {unit_test_file} failed with exit code {exit_code}
+                        
+                        Test Output:
+                        {collector.get_output()}
+                        
+                        Failed Tests:
+                        {chr(10).join(collector.failed)}
+                        
+                        Errors:
+                        {chr(10).join(collector.errors)}
                         """
-                        for failure in test_result.failures:
-                            error_context += f"\nFailure in {failure[0]}:\n{failure[1]}"
-                        for error in test_result.errors:
-                            error_context += f"\nError in {error[0]}:\n{error[1]}"
+                        fix_required = True
                 except Exception as e:
                     print(f"\nTest {unit_test_file} ERROR")
                     print(f"Error: {str(e)}")
                     error_context = f"Test {unit_test_file} had an error: {str(e)}"
-
+                    fix_required = True
                 # If we got here, the test failed or had an error
                 if attempt < max_attempts - 1:
                     # Add the error context to the messages for the next attempt
@@ -274,6 +301,29 @@ class OpenAIClient:
                         Please provide a fixed version of both files that addresses these issues.
                         Keep the same class names and ensure the code is directly executable.
                         Remember to define expected_output as a single line variable with a valid JSON string.
+                        
+                        Original requirements:
+                        - The decipher class must be named '{step["class_name"]}'
+                        - The class must inherit from DecipherBase
+                        - The decipher method must be defined exactly as: '@staticmethod def decipher(cli_response: str)'
+                        - The unit test class must be named exactly 'Test{step["class_name"]}'
+                        - The unit test must use the provided CLI output example
+                        - Unit tests must use pytest framework
+                        - Both files must be properly formatted with imports and docstrings
+                        - The class docstring must include the CLI command being parsed
+                        - The code must be production-ready and follow Python best practices
+                        - In the unit test, define the expected output as a single line variable named 'expected_output' with a valid JSON string
+                        - In the unit test file, use relative imports for importing the decipher class
+                        - In the decipher file, import the base class using 'from tests.base.decipher import Decipher'
+                        
+                        CLI Output Example:
+                        {step["cli_output_example"]}
+                        
+                        Decipher Instructions:
+                        {step["decipher_instructions"]}
+                        
+                        Unit Test Instructions:
+                        {step["unit_test_instructions"]}
                         """
                     })
                     attempt += 1
