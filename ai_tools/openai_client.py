@@ -135,7 +135,7 @@ class OpenAIClient:
             [Python code for unit_test.py]
             
             # explanation
-            [Short summary of your recent implementation]
+            [Short summary of your recent changes]
             
             Step details:
             {yaml.dump(step, default_flow_style=False)}
@@ -272,11 +272,12 @@ class OpenAIClient:
                         break
                     else:
                         print(f"\nTest {unit_test_file} FAILED")
+                        test_output = {collector.get_output()}
                         error_context = f"""
                         Test {unit_test_file} failed with exit code {exit_code}
                         
                         Test Output:
-                        {collector.get_output()}
+                        {test_output}
                         
                         Failed Tests:
                         {chr(10).join(collector.failed)}
