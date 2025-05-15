@@ -252,8 +252,7 @@ class OpenAIClient:
                     collector = ResultCollector()
                     pytest_args = [
                         str(unit_test_file),
-                        '-v',
-                        '--tb=short'
+                        '-vv'
                     ]
                     exit_code = pytest.main(pytest_args, plugins=[collector])
                     
