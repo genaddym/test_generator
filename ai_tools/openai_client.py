@@ -11,8 +11,8 @@ import pytest
 from io import StringIO
 import sys
 
-#OPENAI_MODEL = "gpt-4.1-mini"
-OPENAI_MODEL = "gpt-4-turbo"
+OPENAI_MODEL = "gpt-4.1-mini"
+#OPENAI_MODEL = "gpt-4-turbo"
 
 
 class OpenAIClient:
@@ -100,9 +100,10 @@ class OpenAIClient:
             Project Context:
             {project_context}
             
-            Based on the following step details, generate two Python files:
+            Based on the following step details, generate three sections:
             1. A decipher class that inherits from DecipherBase and implements the decipher method
             2. A unit test class that tests the decipher using the provided CLI output
+            3. An explanation of the implementation and any important design decisions
             
             Requirements:
             - The decipher class must be named '{class_name}Decipher'. All non-alphanumeric characters should be removed.
@@ -115,7 +116,6 @@ class OpenAIClient:
             - Unit tests must use pytest framework (not unittest)
             - Both files must be properly formatted with imports and docstrings
             - The class docstring must include the CLI command being parsed (e.g., 'Parser for "show version" command')
-            - The code must be production-ready and follow Python best practices
             - The code must align with the project context and requirements
             - Do not add any suffixes or prefixes to the class names
             - Do not include any markdown formatting or explanations in the code
@@ -126,8 +126,7 @@ class OpenAIClient:
             - IMPORTANT: In the unit test file, use relative imports for importing the decipher class (e.g., 'from .decipher import ShowLldpNeighborsDecipher')
             - IMPORTANT: In the decipher file, import the base class using 'from tests.base.decipher import Decipher'
             
-            IMPORTANT: Your response must contain ONLY the Python code for both files, with no additional text, markdown formatting, or explanations.
-            The response should be in this exact format:
+            Your response must be in this exact format:
             
             # decipher.py
             [Python code for decipher.py]
@@ -135,12 +134,15 @@ class OpenAIClient:
             # unit_test.py
             [Python code for unit_test.py]
             
+            # explanation
+            [Short summary of your recent implementation]
+            
             Step details:
             {yaml.dump(step, default_flow_style=False)}
             """
             
             messages = [
-                {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing. You must respond with only executable Python code, no explanations, markdown, or code blocks."},
+                {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing. You must respond with executable Python code and explanations in the specified format."},
                 {"role": "user", "content": prompt}
             ]
 
@@ -173,8 +175,19 @@ class OpenAIClient:
                     if len(decipher_part) != 2:
                         raise ValueError("AI response did not contain unit_test.py marker")
                     
+                    unit_test_part = decipher_part[1].split("# explanation")
+                    if len(unit_test_part) != 2:
+                        raise ValueError("AI response did not contain explanation marker")
+                    
                     decipher_code = decipher_part[0].strip()
-                    unit_test_code = decipher_part[1].strip()
+                    unit_test_code = unit_test_part[0].strip()
+                    explanation = unit_test_part[1].strip()
+                    
+                    # Log the explanation
+                    print("\nImplementation Explanation:")
+                    print("=" * 80)
+                    print(explanation)
+                    print("=" * 80)
                     
                     # Save decipher code
                     with open(decipher_file, "w") as f:
