@@ -10,6 +10,7 @@ import json
 import pytest
 from io import StringIO
 import sys
+import subprocess
 
 OPENAI_MODEL = "gpt-4.1-mini"
 #OPENAI_MODEL = "gpt-4-turbo"
@@ -30,6 +31,34 @@ class OpenAIClient:
         
         self.client = OpenAI(api_key=self.api_key)
     
+    def run_pytest(self, test_file: str) -> Tuple[int, str]:
+        """
+        Run pytest in a subprocess and capture its output.
+        
+        Args:
+            test_file (str): Path to the test file
+            
+        Returns:
+            Tuple[int, str]: (exit_code, output)
+        """
+        # Add the project root to Python path
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        env = os.environ.copy()
+        if 'PYTHONPATH' in env:
+            env['PYTHONPATH'] = f"{project_root}:{env['PYTHONPATH']}"
+        else:
+            env['PYTHONPATH'] = project_root
+
+        # Run pytest in a subprocess
+        result = subprocess.run(
+            ["pytest", str(test_file), "-vv"],
+            capture_output=True,
+            text=True,
+            env=env
+        )
+        
+        return result.returncode, result.stdout + result.stderr
+
     def create_deciphers(self, test_folder_path: str, command_id: Optional[str] = None) -> dict:
         """
         For each step in the implementation guide, ask the AI to generate a decipher and unit test,
@@ -198,69 +227,19 @@ class OpenAIClient:
                         f.write(unit_test_code)
                 else:
                     print(f"\nSkipping OpenAI call - using existing files in {command_folder}")
-                    with open(unit_test_file, 'r') as f:
-                        unit_test_code = f.read()
 
                 # Verify the implementation
                 try:
-                    # Add the project root to Python path
-                    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-                    if project_root not in sys.path:
-                        sys.path.insert(0, project_root)
-
-                    # Get the module path relative to project root
-                    rel_path = os.path.relpath(os.path.dirname(unit_test_file), project_root)
-                    module_path = rel_path.replace(os.path.sep, '.')
-                    
-                    # Create a spec for the module
-                    spec = importlib.util.spec_from_file_location(module_path, unit_test_file)
-                    test_module = importlib.util.module_from_spec(spec)
-                    # Set the module's __package__ attribute to enable relative imports
-                    test_module.__package__ = module_path
-                    spec.loader.exec_module(test_module)
-
-                    # Create a test suite and run it
-
-
-                    class ResultCollector:
-                        def __init__(self):
-                            self.passed = []
-                            self.failed = []
-                            self.errors = []
-                            self.output = StringIO()
-                            self.old_stdout = sys.stdout
-                            sys.stdout = self.output
-
-                        def pytest_runtest_logreport(self, report):
-                            if report.when == 'call':  # Only process the actual test call
-                                if report.passed:
-                                    self.passed.append(report.nodeid)
-                                elif report.failed:
-                                    if report.longrepr:
-                                        self.failed.append(f"{report.nodeid}\n{report.longrepr}")
-                                    else:
-                                        self.failed.append(report.nodeid)
-                                elif report.outcome == 'error':
-                                    if report.longrepr:
-                                        self.errors.append(f"{report.nodeid}\n{report.longrepr}")
-                                    else:
-                                        self.errors.append(report.nodeid)
-
-                        def get_output(self):
-                            return self.output.getvalue()
-
-                    collector = ResultCollector()
-                    pytest_args = [
-                        str(unit_test_file),
-                        '-vv'
-                    ]
-                    exit_code = pytest.main(pytest_args, plugins=[collector])
+                    # Run pytest in a subprocess
+                    exit_code, test_output = self.run_pytest(unit_test_file)
                     
                     if exit_code == 0:
                         print(f"\nTest {unit_test_file} PASSED")
                         fix_required = False
-                        # Extract JSON example only from successful tests
-                        json_example_match = re.search(r'expected_output\s*=\s*({[^{}]*(?:{[^{}]*}[^{}]*)*})', unit_test_code)
+                        # Read the test file to extract JSON example
+                        with open(unit_test_file, 'r') as f:
+                            test_content = f.read()
+                        json_example_match = re.search(r'expected_output\s*=\s*({[^{}]*(?:{[^{}]*}[^{}]*)*})', test_content)
                         if json_example_match:
                             try:
                                 json_example = json.loads(json_example_match.group(1))
@@ -271,18 +250,11 @@ class OpenAIClient:
                         break
                     else:
                         print(f"\nTest {unit_test_file} FAILED")
-                        test_output = {collector.get_output()}
                         error_context = f"""
                         Test {unit_test_file} failed with exit code {exit_code}
                         
                         Test Output:
                         {test_output}
-                        
-                        Failed Tests:
-                        {chr(10).join(collector.failed)}
-                        
-                        Errors:
-                        {chr(10).join(collector.errors)}
                         """
                         fix_required = True
                 except Exception as e:
@@ -290,6 +262,7 @@ class OpenAIClient:
                     print(f"Error: {str(e)}")
                     error_context = f"Test {unit_test_file} had an error: {str(e)}"
                     fix_required = True
+
                 # If we got here, the test failed or had an error
                 if attempt < max_attempts - 1:
                     # Add the error context to the messages for the next attempt

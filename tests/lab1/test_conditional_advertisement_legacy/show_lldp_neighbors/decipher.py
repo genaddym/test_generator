@@ -26,12 +26,13 @@ class ShowLldpNeighborsDecipher(Decipher):
             if '|' in line and '-' not in line:
                 header_line_index = i
                 headers = [h.strip().lower().replace(' ', '_') for h in line.split('|')]
+                # Remove empty headers if any (e.g., trailing empty after last '|')
+                headers = [h for h in headers if h]
                 break
 
         if header_line_index is None or not headers:
             return {'neighbors': []}
 
-        # Data lines start after the separator line (which is after header line)
         # Find separator line index (line with only '-', '+', '|', and spaces)
         separator_line_index = None
         for i in range(header_line_index + 1, len(lines)):
@@ -52,7 +53,7 @@ class ShowLldpNeighborsDecipher(Decipher):
             # Split line by '|' and strip each field
             fields = [field.strip() for field in line.split('|')]
             # Remove empty trailing fields caused by trailing '|'
-            fields = [f for f in fields if f != '']
+            fields = [f for f in fields if f]
 
             # If number of fields less than headers, pad with empty strings
             if len(fields) < len(headers):
