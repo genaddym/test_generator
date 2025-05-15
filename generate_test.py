@@ -54,30 +54,58 @@ def main():
         # Generate the test implementation
         if is_full_test:
             logger.info(f"Generating all test implementations for folder: {test_folder}")
-            results = client.create_deciphers(test_folder)
+            steps = client.create_deciphers(test_folder)
         else:
             logger.info(f"Generating decipher for command ID {command_id} in folder: {test_folder}")
-            results = client.create_deciphers(test_folder, command_id=command_id)
+            steps = client.create_deciphers(test_folder, command_id=command_id)
+        
+        # Print detailed information about the returned steps
+        print("\nDetailed Steps Information:")
+        print("=" * 80)
+        print(f"Number of steps: {len(steps['steps'])}")
+        for i, step in enumerate(steps['steps'], 1):
+            print(f"\nStep {i}:")
+            for key, value in step.items():
+                if isinstance(value, str) and len(value) > 100:
+                    print(f"    {key}: {value[:100]}... (truncated)")
+                else:
+                    print(f"    {key}: {value}")
+        print("=" * 80)
+        
+        # Get all test files
+        test_files = []
+        for step in steps['steps']:
+            folder_name = step["cli_command"].replace(" ", "_").replace("/", "_")
+            test_file = os.path.join(test_folder, folder_name, "unit_test.py")
+            if os.path.exists(test_file):
+                test_files.append(test_file)
+        
+        # Verify all tests
+        results = client.verify_unit_tests(test_files)
         
         # Print the results
         print("\nTest Results:")
         print("=" * 80)
         if results['passed']:
-            print(f"\nPassed tests ({len(results['passed'])}):")
-            for test in results['passed']:
-                print(f"  ✓ {test}")
-        
-        if results['failed']:
-            print(f"\nFailed tests ({len(results['failed'])}):")
-            for test, details in results['failed']:
-                print(f"  ✗ {test}")
-                print(f"    Details: {details}")
-        
-        if results['errors']:
-            print(f"\nTests with errors ({len(results['errors'])}):")
-            for test, error in results['errors']:
-                print(f"  ! {test}")
-                print(f"    Error: {error}")
+            print("\nAll tests passed successfully!")
+        else:
+            print("\nSome tests failed or had errors:")
+            
+            if results['details']['passed']:
+                print(f"\nPassed tests ({len(results['details']['passed'])}):")
+                for test in results['details']['passed']:
+                    print(f"  ✓ {test}")
+            
+            if results['details']['failed']:
+                print(f"\nFailed tests ({len(results['details']['failed'])}):")
+                for test in results['details']['failed']:
+                    print(f"  ✗ {test}")
+            
+            if results['details']['errors']:
+                print(f"\nTests with errors ({len(results['details']['errors'])}):")
+                for test, error in results['details']['errors']:
+                    print(f"  ! {test}")
+                    print(f"    Error: {error}")
         print("=" * 80)
         
         logger.info("Test generation completed successfully")

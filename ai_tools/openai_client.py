@@ -147,12 +147,12 @@ class OpenAIClient:
             attempt = 0
 
             while attempt < max_attempts:
-                # Skip OpenAI for debugging
-                SKIP_OPENAI = True
-                # Skip OpenAI for debugging
+                # Check if decipher file already exists
+                decipher_file = os.path.join(command_folder, "decipher.py")
                 unit_test_file = os.path.join(command_folder, "unit_test.py")
+                files_exist = os.path.exists(decipher_file) and os.path.exists(unit_test_file)
 
-                if not SKIP_OPENAI:
+                if not files_exist:
                     print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {max_attempts}")
                     response = self.client.chat.completions.create(
                         model=OPENAI_MODEL,
@@ -176,13 +176,16 @@ class OpenAIClient:
                     unit_test_code = decipher_part[1].strip()
                     
                     # Save decipher code
-                    decipher_file = os.path.join(command_folder, "decipher.py")
                     with open(decipher_file, "w") as f:
                         f.write(decipher_code)
                     
                     # Save unit test code
                     with open(unit_test_file, "w") as f:
                         f.write(unit_test_code)
+                else:
+                    print(f"\nSkipping OpenAI call - using existing files in {command_folder}")
+                    with open(unit_test_file, 'r') as f:
+                        unit_test_code = f.read()
 
                 # Verify the implementation
                 try:
@@ -250,6 +253,17 @@ class OpenAIClient:
                 # If we got here, the test failed or had an error
                 if attempt < max_attempts - 1:
                     # Add the error context to the messages for the next attempt
+                    if files_exist:
+                        # If files exist, we need to read their content for the next attempt
+                        with open(decipher_file, 'r') as f:
+                            decipher_code = f.read()
+                        with open(unit_test_file, 'r') as f:
+                            unit_test_code = f.read()
+                        content = f"# decipher.py\n{decipher_code}\n# unit_test.py\n{unit_test_code}"
+                    else:
+                        # If files were just generated, use the code we already have
+                        content = f"# decipher.py\n{decipher_code}\n# unit_test.py\n{unit_test_code}"
+                    
                     messages.append({"role": "assistant", "content": content})
                     messages.append({
                         "role": "user",
@@ -278,9 +292,12 @@ class OpenAIClient:
         Returns:
             dict: Dictionary containing test results with the following structure:
                 {
-                    'passed': [list of passed test paths],
-                    'failed': [list of failed test paths],
-                    'errors': [list of test paths with errors]
+                    'passed': bool,  # True if all tests passed, False otherwise
+                    'details': {
+                        'passed': [list of passed test paths],
+                        'failed': [list of failed test paths],
+                        'errors': [list of test paths with errors]
+                    }
                 }
         """
         import pytest
@@ -289,9 +306,12 @@ class OpenAIClient:
         from pathlib import Path
 
         results = {
-            'passed': [],
-            'failed': [],
-            'errors': []
+            'passed': True,  # Default to True, will be set to False if any test fails
+            'details': {
+                'passed': [],
+                'failed': [],
+                'errors': []
+            }
         }
 
         for test_path in test_paths:
@@ -312,11 +332,13 @@ class OpenAIClient:
                 exit_code = pytest.main(pytest_args)
                 
                 if exit_code == 0:
-                    results['passed'].append(test_path)
+                    results['details']['passed'].append(test_path)
                 else:
-                    results['failed'].append(test_path)
+                    results['details']['failed'].append(test_path)
+                    results['passed'] = False
             except Exception as e:
-                results['errors'].append((test_path, str(e)))
+                results['details']['errors'].append((test_path, str(e)))
+                results['passed'] = False
 
         return results
 
