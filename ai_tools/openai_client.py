@@ -4,6 +4,10 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import yaml
 import importlib.util
+import unittest
+import sys
+import re
+import json
 
 OPENAI_MODEL = "gpt-4.1-mini"
 # OPENAI_MODEL = "gpt-4-turbo"
@@ -52,11 +56,6 @@ class OpenAIClient:
                     ]
                 }
         """
-        import unittest
-        from importlib.machinery import SourceFileLoader
-        import sys
-        import re
-        import json
 
         # Read project context
         with open("project_description.txt", "r") as f:
@@ -215,7 +214,7 @@ class OpenAIClient:
                         print(f"Tests run: {test_result.testsRun}")
                         
                         # Extract JSON example only from successful tests
-                        json_example_match = re.search(r'expected_output\s*=\s*({[\s\S]*?"neighbors":\s*\[[\s\S]*?\]\s*})', unit_test_code)
+                        json_example_match = re.search(r'expected_output\s*=\s*({[^{}]*(?:{[^{}]*}[^{}]*)*})', unit_test_code)
                         if json_example_match:
                             try:
                                 json_example = json.loads(json_example_match.group(1))
@@ -282,67 +281,7 @@ class OpenAIClient:
                     break
 
         return {'steps': steps}
-
-    def verify_unit_tests(self, test_paths: list) -> dict:
-        """
-        Execute the unit tests using pytest and return their results.
-        
-        Args:
-            test_paths (list): List of paths to unit test files
-            
-        Returns:
-            dict: Dictionary containing test results with the following structure:
-                {
-                    'passed': bool,  # True if all tests passed, False otherwise
-                    'details': {
-                        'passed': [list of passed test paths],
-                        'failed': [list of failed test paths],
-                        'errors': [list of test paths with errors]
-                    }
-                }
-        """
-        import pytest
-        import sys
-        import os
-        from pathlib import Path
-
-        results = {
-            'passed': True,  # Default to True, will be set to False if any test fails
-            'details': {
-                'passed': [],
-                'failed': [],
-                'errors': []
-            }
-        }
-
-        for test_path in test_paths:
-            try:
-                # Add the test directory to Python path
-                test_dir = os.path.dirname(test_path)
-                if test_dir not in sys.path:
-                    sys.path.append(test_dir)
-
-                # Run pytest on the test file
-                test_file = Path(test_path)
-                pytest_args = [
-                    str(test_file),
-                    '-v',
-                    '--tb=short'
-                ]
-                
-                exit_code = pytest.main(pytest_args)
-                
-                if exit_code == 0:
-                    results['details']['passed'].append(test_path)
-                else:
-                    results['details']['failed'].append(test_path)
-                    results['passed'] = False
-            except Exception as e:
-                results['details']['errors'].append((test_path, str(e)))
-                results['passed'] = False
-
-        return results
+       
 
     def generate_test(self, test_folder_path: str, command_id: Optional[str] = None) -> str:
-
         self.create_deciphers(test_folder_path, command_id=command_id)
