@@ -1,4 +1,4 @@
-- command_id: "1"
+- decipher_id: "1"
   input_parameters: ""
   cli_command: "show lldp neighbors"
   cli_output_example: |
@@ -16,7 +16,7 @@
     ge400-0/0/34  | tcr01.site10.cran1            | ge400-0/0/34         | 120            |
   decipher_instructions: "return a JSON dict representing of the cli output"
 
-- command_id: "2"
+- decipher_id: "2"
   input_parameters: "INTERFACE_NAME"
   cli_command: "show config interfaces INTERFACE_NAME"
   cli_output_example: |

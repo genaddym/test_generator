@@ -48,20 +48,8 @@ def main():
         # Path to the test folder containing documentation files
         test_folder = os.path.join("tests", "lab1", TEST_NAME)
         
-        # Get user's choice
-        # is_full_test, command_id = get_user_choice()
-        
-        # # Generate the test implementation
-        # if is_full_test:
-        #     logger.info(f"Generating all test implementations for folder: {test_folder}")
-        #     steps = client.create_deciphers(test_folder)
-        # else:
-        #     logger.info(f"Generating decipher for command ID {command_id} in folder: {test_folder}")
-        #     steps = client.create_deciphers(test_folder, command_id=command_id)
-        
-
         logger.info(f"Generating all test implementations for folder: {test_folder}")
-        steps = client.create_deciphers(test_folder)
+        steps = client.generate_test(test_folder)
         logger.info("Decipher generation completed")
         
     except Exception as e:
