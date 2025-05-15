@@ -1,14 +1,12 @@
 from tests.base.decipher import Decipher
-from typing import List, Dict
-
 
 class ShowLldpNeighborsDecipher(Decipher):
     """
-    Parser for "show lldp neighbors" command
+    Parser for the 'show lldp neighbors' CLI command.
     """
 
     @staticmethod
-    def decipher(cli_response: str) -> Dict[str, List[Dict[str, str]]]:
+    def decipher(cli_response: str):
         """
         Parse the 'show lldp neighbors' CLI output into structured JSON.
 
@@ -19,33 +17,22 @@ class ShowLldpNeighborsDecipher(Decipher):
             dict: Parsed output with key 'neighbors' containing list of neighbor dicts.
         """
         neighbors = []
-        lines = [line.rstrip() for line in cli_response.strip().splitlines() if line.strip()]
-        # Find the separator line index (line with dashes and pluses)
-        separator_index = None
-        for idx, line in enumerate(lines):
-            if set(line.strip()) <= set("-+"):
-                separator_index = idx
+        lines = cli_response.strip().split('\n')
+        headers = []
+        for line in lines:
+            if '|' in line and '-' not in line:
+                headers = [header.strip().lower().replace(' ', '_') for header in line.split('|')]
                 break
-        if separator_index is None or separator_index == 0:
-            return {"neighbors": neighbors}
 
-        # Header line is the line before separator
-        header_line = lines[separator_index - 1]
-        # Split header by '|' and normalize keys
-        headers = [h.strip().lower().replace(" ", "_") for h in header_line.split("|")]
-        # Data lines start after separator line
-        data_lines = lines[separator_index + 1 :]
-
-        for line in data_lines:
-            if "|" not in line:
+        data_start = False
+        for line in lines:
+            if '-' in line and '+' in line:
+                data_start = True
                 continue
-            parts = [p.strip() for p in line.split("|")]
-            # Remove empty trailing parts caused by trailing '|'
-            if parts and parts[-1] == "":
-                parts = parts[:-1]
-            if len(parts) != len(headers):
-                continue
-            neighbor = dict(zip(headers, parts))
-            neighbors.append(neighbor)
+            if data_start and '|' in line:
+                values = [value.strip() for value in line.split('|')]
+                if len(values) == len(headers):
+                    neighbor = dict(zip(headers, values))
+                    neighbors.append(neighbor)
 
-        return {"neighbors": neighbors}
+        return {'neighbors': neighbors}

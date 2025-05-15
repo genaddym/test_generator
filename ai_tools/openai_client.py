@@ -11,8 +11,8 @@ import pytest
 from io import StringIO
 import sys
 
-OPENAI_MODEL = "gpt-4.1-mini"
-# OPENAI_MODEL = "gpt-4-turbo"
+#OPENAI_MODEL = "gpt-4.1-mini"
+OPENAI_MODEL = "gpt-4-turbo"
 
 
 class OpenAIClient:
