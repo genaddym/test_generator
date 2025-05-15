@@ -16,6 +16,10 @@
     ge400-0/0/34  | tcr01.site10.cran1            | ge400-0/0/34         | 120            |
   decipher_instructions: "return a JSON dict representing of the cli output"
 
+- step_id: "1"
+  input_parameters: ""
+  description: "Fetch devices by role asbr and by vendor drivenets"
+
 - decipher_id: "2"
   input_parameters: "INTERFACE_NAME"
   cli_command: "show config interfaces INTERFACE_NAME"

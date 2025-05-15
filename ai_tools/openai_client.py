@@ -10,6 +10,7 @@ import subprocess
 OPENAI_MODEL = "gpt-4.1-mini"
 #OPENAI_MODEL = "gpt-4-turbo"
 
+MAX_ATTEMPTS = 5
 
 class OpenAIClient:
     def __init__(self, api_key: Optional[str] = None):
@@ -125,7 +126,7 @@ class OpenAIClient:
             {"role": "user", "content": prompt}
         ]
 
-        max_attempts = 5
+        MAX_ATTEMPTS = 5
         attempt = 0
         fix_required = False
         
@@ -133,9 +134,9 @@ class OpenAIClient:
         unit_test_file = os.path.join(command_folder, "unit_test.py")
         files_exist = os.path.exists(decipher_file) and os.path.exists(unit_test_file)
 
-        while attempt < max_attempts:
+        while attempt < MAX_ATTEMPTS:
             if not files_exist or fix_required:
-                print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {max_attempts}")
+                print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {MAX_ATTEMPTS}")
                 response = self.client.chat.completions.create(
                     model=OPENAI_MODEL,
                     messages=messages,
@@ -226,7 +227,7 @@ class OpenAIClient:
                 fix_required = True
 
             # If we got here, the test failed or had an error
-            if attempt < max_attempts - 1:
+            if attempt < MAX_ATTEMPTS - 1:
                 # Add the error context to the messages for the next attempt
                 if files_exist:
                     # If files exist, we need to read their content for the next attempt
@@ -315,6 +316,99 @@ class OpenAIClient:
         
         return test_file, template_content
 
+    def create_test_step(self, project_context: str, code_snippets: str, step: dict, test_file_path: str, test_file_content: str) -> dict:
+        """
+        Generate a test step implementation using AI.
+        """
+        prompt = f"""
+        You are a Python network automation expert specializing in test automation.
+        
+        Based on the following project context, code snippets, step details, and current test file content, implement the test step.
+        The implementation should be added to the test method in the test class.
+        
+        Project Context:
+        {project_context}
+        
+        Code Snippets:
+        {code_snippets}
+        
+        Current test file content:
+        {test_file_content}
+        
+        Step details:
+        {yaml.dump(step, default_flow_style=False)}
+        
+        Requirements:
+        - The implementation must follow the existing test structure
+        - Add clear comments explaining the implementation
+        - Use the project context and code snippets as reference for implementation patterns
+        
+        IMPORTANT: Your response must be in this exact format:
+        
+        # new_file_content
+        [Complete updated test file content]
+        
+        # explanation
+        [Explanation of changes made]
+        """
+        
+        messages = [
+            {"role": "system", "content": "You are a Python network automation expert specializing in test automation. You must respond with executable Python code that follows the project's structure and standards."},
+            {"role": "user", "content": prompt}
+        ]
+
+        attempt = 0
+        
+        while attempt < MAX_ATTEMPTS:
+            print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {MAX_ATTEMPTS}")
+            response = self.client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+                temperature=0.1
+            )
+            print("Received response from OpenAI")
+            
+            # Extract code from response
+            content = response.choices[0].message.content
+            
+            # Split into new file content and explanation
+            parts = content.split("# new_file_content")
+            if len(parts) != 2:
+                messages.append({
+                    "role": "user",
+                    "content": "Your response is missing the '# new_file_content' marker. Please provide the response in the correct format with new file content and explanation sections."
+                })
+                attempt += 1
+                continue
+            
+            file_content_part = parts[1].split("# explanation")
+            if len(file_content_part) != 2:
+                messages.append({
+                    "role": "user",
+                    "content": "Your response is missing the '# explanation' marker. Please provide the response in the correct format with new file content and explanation sections."
+                })
+                attempt += 1
+                continue
+            
+            new_file_content = file_content_part[0].strip()
+            explanation = file_content_part[1].strip()
+            
+            # Log the explanation
+            print("\nImplementation Explanation:")
+            print("=" * 80)
+            print(explanation)
+            print("=" * 80)
+            
+            # Write the new file content
+            with open(test_file_path, "w") as f:
+                f.write(new_file_content)
+            
+            step["test_file_content"] = new_file_content
+            step["explanation"] = explanation
+            return step
+
+        return step
+
     def generate_test(self, test_name: str):
         test_folder_path = os.path.join("tests", "lab1", test_name)
         with open("project_description.txt", "r") as f:
@@ -332,20 +426,28 @@ class OpenAIClient:
 
         # 1. create deciphers
         # Filter steps to only include those with decipher_id
-        steps = [step for step in steps if "decipher_id" in step]
+        deciphers = [step for step in steps if "decipher_id" in step]
 
-        for step in steps:
-            step["unit_test_instructions"] = "Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example."
+        for decipher in deciphers:
+            decipher["unit_test_instructions"] = "Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example."
 
-            if "decipher_instructions" in step:
-                step["decipher_instructions"] = "The decipher should inherit from Decipher, implement the `decipher` method, and " + step["decipher_instructions"]
+            if "decipher_instructions" in decipher:
+                decipher["decipher_instructions"] = "The decipher should inherit from Decipher, implement the `decipher` method, and " + decipher["decipher_instructions"]
 
             # Create folder name from CLI command
-            folder_name = step["cli_command"].replace(" ", "_").replace("/", "_")
+            folder_name = decipher["cli_command"].replace(" ", "_").replace("/", "_")
             command_folder = os.path.join(test_folder_path, folder_name)
             os.makedirs(command_folder, exist_ok=True)
 
             # Create decipher
-            step = self.create_decipher(step, command_folder)
+            decipher = self.create_decipher(decipher, command_folder)
 
-        return {'steps': steps}
+        # 2. create the test steps
+        # Filter steps to only include those with step_id
+        steps = [step for step in steps if "step_id" in step]
+
+        for step in steps:
+            step = self.create_test_step(project_context, code_snippets, step, test_file_path, test_file_content)
+            # Update test_file_content after each step
+            # with open(test_file_path, "r") as f:
+            #     test_file_content = f.read()
