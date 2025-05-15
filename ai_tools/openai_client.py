@@ -280,14 +280,55 @@ class OpenAIClient:
 
         return step
        
-    def generate_test(self, test_folder_path: str) -> str:
-        # Read project context
+    def create_test_file(self, test_name: str, test_folder_path: str) -> tuple[str, str]:
+        """
+        Create a new test file from template with proper class and method names.
+        If file exists, read and return its content.
+        
+        Args:
+            test_name (str): Name of the test (e.g., 'show_lldp_neighbors')
+            test_folder_path (str): Path to the test folder
+            
+        Returns:
+            tuple[str, str]: Path to the test file and its content
+        """
+        test_file = os.path.join(test_folder_path, f"{test_name}.py")
+        if os.path.exists(test_file):
+            # Read existing file content
+            with open(test_file, "r") as f:
+                template_content = f.read()
+        else:
+            # Read the template
+            with open("test_template.py", "r") as f:
+                template_content = f.read()
+            
+            # Convert test_name to camel case for class name
+            class_name = ''.join(word.capitalize() for word in test_name.split('_'))
+            
+            # Replace class and method names
+            template_content = template_content.replace("class TestTemplate", f"class Test{class_name}")
+            template_content = template_content.replace("def test_template", f"def {test_name}")
+            
+            # Write the modified template to the test file
+            with open(test_file, "w") as f:
+                f.write(template_content)
+        
+        return test_file, template_content
+
+    def generate_test(self, test_name: str):
+        test_folder_path = os.path.join("tests", "lab1", test_name)
         with open("project_description.txt", "r") as f:
             project_context = f.read()
+
+        with open("code_snippets.py", "r") as f:
+            code_snippets = f.read()
 
         guide_file = os.path.join(test_folder_path, "implementation_guide.yml")
         with open(guide_file, "r") as f:
             steps = yaml.safe_load(f)
+
+        # Create test file from template
+        test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
 
         # 1. create deciphers
         # Filter steps to only include those with decipher_id

@@ -32,7 +32,7 @@ TOPOLOGY_CONFIG_FILE = Path("lab-1") / "resources" / "lab-8.1" / "topology.json"
 
 
 
-class TestTemplate:
+class TestTestConditionalAdvertisementLegacy:
     """
     Test description
     """
@@ -42,7 +42,7 @@ class TestTemplate:
         [(DEVICE_CONFIG_FILE, TOPOLOGY_CONFIG_FILE)],
         indirect=True,
     )
-    def test_template(
+    def test_conditional_advertisement_legacy(
         self, device_manager: DeviceManager, topology_manager: TopologyManager
     ):
         """
@@ -64,7 +64,5 @@ class TestTemplate:
         NetworkTopologyVerification.validate_topology(topology_manager.inventory_manager.devices,
                                                       validation_types=[TopologyValidationType.SYSTEM_STATUS])
 
+
         # test logic here
-
-
-

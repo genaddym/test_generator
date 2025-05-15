@@ -44,13 +44,8 @@ def main():
         # Initialize the OpenAI client
         logger.info("Initializing OpenAI client...")
         client = OpenAIClient()
-        
-        # Path to the test folder containing documentation files
-        test_folder = os.path.join("tests", "lab1", TEST_NAME)
-        
-        logger.info(f"Generating all test implementations for folder: {test_folder}")
-        steps = client.generate_test(test_folder)
-        logger.info("Decipher generation completed")
+        client.generate_test(TEST_NAME)
+
         
     except Exception as e:
         logger.error(f"Error generating test: {str(e)}")
