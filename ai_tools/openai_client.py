@@ -383,7 +383,10 @@ class OpenAIClient:
                 decipher={decipher['class_name']},
             )
           * Use the expected output format to validate the results
-        
+        - Find a comment # Step implementation completed. This is the previous implementation of the test step. Remove this comment and start implementing the new step from this point, if applicable.
+        - At the end of the test step, insert a comment with the following format:
+        # Step implementation completed
+
         IMPORTANT: Your response must be in this exact format:
         
         # new_file_content
@@ -494,6 +497,4 @@ class OpenAIClient:
 
         for step in steps:
             step = self.create_test_step(project_context, code_snippets, deciphers_map, step, test_file_path, test_file_content)
-            # Update test_file_content after each step
-            # with open(test_file_path, "r") as f:
-            #     test_file_content = f.read()
+
