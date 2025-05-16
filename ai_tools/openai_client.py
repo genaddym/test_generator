@@ -316,10 +316,39 @@ class OpenAIClient:
         
         return test_file, template_content
 
-    def create_test_step(self, project_context: str, code_snippets: str, step: dict, test_file_path: str, test_file_content: str) -> dict:
+    def create_test_step(self, project_context: str, code_snippets: str, deciphers_map: dict, step: dict, test_file_path: str, test_file_content: str, input_parameters: dict = None) -> dict:
         """
         Generate a test step implementation using AI.
+        
+        Args:
+            project_context (str): Project context from project_description.txt
+            code_snippets (str): Code snippets from code_snippets.py
+            deciphers_map (dict): Map of decipher_id to decipher details
+            step (dict): Step details from implementation_guide.yml
+            test_file_path (str): Path to the test file
+            test_file_content (str): Current content of the test file
+            input_parameters (dict, optional): Parameters to be applied to CLI commands
         """
+        # Get decipher information if available
+        decipher_info = ""
+        if "related_decipher_id" in step:
+            decipher = deciphers_map.get(step["related_decipher_id"])
+            if decipher:
+                # Apply input parameters to CLI command if available
+                cli_command = decipher['cli_command']
+                if input_parameters and "input_parameters" in decipher:
+                    for param in decipher["input_parameters"]:
+                        if param in input_parameters:
+                            cli_command = cli_command.replace(param, str(input_parameters[param]))
+
+                decipher_info = f"""
+                Related Decipher Information:
+                - Import: from {decipher['import_path']} import {decipher['class_name']}
+                - Decipher class name: {decipher['class_name']}
+                - CLI Command: {cli_command}
+                - Expected Output Format: {yaml.dump(decipher.get('json_example', {}), default_flow_style=False)}
+                """
+
         prompt = f"""
         You are a Python network automation expert specializing in test automation.
         
@@ -338,10 +367,22 @@ class OpenAIClient:
         Step details:
         {yaml.dump(step, default_flow_style=False)}
         
+        {decipher_info}
+        
         Requirements:
         - The implementation must follow the existing test structure
         - Add clear comments explaining the implementation
         - Use the project context and code snippets as reference for implementation patterns
+        - If decipher information is provided:
+          * Use the import statement to import the decipher class
+          * Use the CLI command to execute the command (parameters have been applied)
+          * Execute the command and decipher the output using the provided decipher class as follows:
+            cli_session = device_manager.cli_sessions[device_name]
+            bgp_route = cli_session.send_command(
+                command=f"{cli_command}",
+                decipher={decipher['class_name']},
+            )
+          * Use the expected output format to validate the results
         
         IMPORTANT: Your response must be in this exact format:
         
@@ -427,6 +468,7 @@ class OpenAIClient:
         # 1. create deciphers
         # Filter steps to only include those with decipher_id
         deciphers = [step for step in steps if "decipher_id" in step]
+        deciphers_map = {decipher["decipher_id"]: decipher for decipher in deciphers}
 
         for decipher in deciphers:
             decipher["unit_test_instructions"] = "Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example."
@@ -442,12 +484,16 @@ class OpenAIClient:
             # Create decipher
             decipher = self.create_decipher(decipher, command_folder)
 
+        # Update the implementation_guide file with the deciphers
+        with open(guide_file, "w") as f:
+            yaml.dump(deciphers, f)
+
         # 2. create the test steps
         # Filter steps to only include those with step_id
         steps = [step for step in steps if "step_id" in step]
 
         for step in steps:
-            step = self.create_test_step(project_context, code_snippets, step, test_file_path, test_file_content)
+            step = self.create_test_step(project_context, code_snippets, deciphers_map, step, test_file_path, test_file_content)
             # Update test_file_content after each step
             # with open(test_file_path, "r") as f:
             #     test_file_content = f.read()

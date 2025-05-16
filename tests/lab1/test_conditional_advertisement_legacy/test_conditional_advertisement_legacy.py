@@ -64,5 +64,12 @@ class TestTestConditionalAdvertisementLegacy:
         NetworkTopologyVerification.validate_topology(topology_manager.inventory_manager.devices,
                                                       validation_types=[TopologyValidationType.SYSTEM_STATUS])
 
+        # Step 1: Fetch devices by role 'asbr' and vendor 'drivenets'
+        logger.info("\n\nFetching devices with role 'ASBR' and vendor 'Drivenets'")
+        drivenets_asbr_devices = topology_manager.get_devices(
+            roles=[Roles.ASBR],
+            vendors=[Vendors.DRIVENETS],
+        )
+        logger.info(f"Found {len(drivenets_asbr_devices)} devices matching criteria")
 
-        # test logic here
+        # Additional test logic can be added here to verify or operate on these devices

@@ -20,6 +20,10 @@
   input_parameters: ""
   description: "Fetch devices by role asbr and by vendor drivenets"
 
+- step_id: "2"
+  input_parameters: ""
+  description: "Iterate over the devices received from step 1"
+
 - decipher_id: "2"
   input_parameters: "INTERFACE_NAME"
   cli_command: "show config interfaces INTERFACE_NAME"
