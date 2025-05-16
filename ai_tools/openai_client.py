@@ -10,7 +10,7 @@ import subprocess
 OPENAI_MODEL = "gpt-4.1-mini"
 #OPENAI_MODEL = "gpt-4-turbo"
 
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 7
 
 class OpenAIClient:
     def __init__(self, api_key: Optional[str] = None):
@@ -331,11 +331,14 @@ class OpenAIClient:
         """
         # Get decipher information if available
         decipher_info = ""
+        cli_command = ""
+        decipher_class_name = "None"
         if "related_decipher_id" in step:
             decipher = deciphers_map.get(step["related_decipher_id"])
             if decipher:
                 # Apply input parameters to CLI command if available
                 cli_command = decipher['cli_command']
+                decipher_class_name = decipher['class_name']
                 if input_parameters and "input_parameters" in decipher:
                     for param in decipher["input_parameters"]:
                         if param in input_parameters:
@@ -343,8 +346,8 @@ class OpenAIClient:
 
                 decipher_info = f"""
                 Related Decipher Information:
-                - Import: from {decipher['import_path']} import {decipher['class_name']}
-                - Decipher class name: {decipher['class_name']}
+                - Import: from {decipher['import_path']} import {decipher_class_name}
+                - Decipher class name: {decipher_class_name}
                 - CLI Command: {cli_command}
                 - Expected Output Format: {yaml.dump(decipher.get('json_example', {}), default_flow_style=False)}
                 """
@@ -380,7 +383,7 @@ class OpenAIClient:
             cli_session = device_manager.cli_sessions[device_name]
             bgp_route = cli_session.send_command(
                 command=f"{cli_command}",
-                decipher={decipher['class_name']},
+                decipher={decipher_class_name},
             )
           * Use the expected output format to validate the results
         - Find a comment # Step implementation completed. This is the previous implementation of the test step. Remove this comment and start implementing the new step from this point, if applicable.
@@ -488,8 +491,17 @@ class OpenAIClient:
             decipher = self.create_decipher(decipher, command_folder)
 
         # Update the implementation_guide file with the deciphers
+        # Create a map of decipher_id to updated decipher
+        updated_deciphers_map = {decipher["decipher_id"]: decipher for decipher in deciphers}
+        
+        # Update deciphers in the original steps while preserving other steps
+        for step in steps:
+            if "decipher_id" in step and step["decipher_id"] in updated_deciphers_map:
+                step.update(updated_deciphers_map[step["decipher_id"]])
+        
+        # Write back all steps to the file
         with open(guide_file, "w") as f:
-            yaml.dump(deciphers, f)
+            yaml.dump(steps, f)
 
         # 2. create the test steps
         # Filter steps to only include those with step_id

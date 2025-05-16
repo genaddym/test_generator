@@ -2,68 +2,45 @@ from tests.base.decipher import Decipher
 
 class ShowLldpNeighborsDecipher(Decipher):
     """
-    Parser for the 'show lldp neighbors' CLI command.
+    Parser for "show lldp neighbors" command
     """
 
     @staticmethod
     def decipher(cli_response: str):
         """
-        Parse the 'show lldp neighbors' CLI output into structured JSON.
-
-        Args:
-            cli_response (str): Raw CLI output string.
-
-        Returns:
-            dict: Parsed output with key 'neighbors' containing list of neighbor dicts.
+        Decipher the CLI output of 'show lldp neighbors' command into a JSON dict.
         """
+        result = {}
         neighbors = []
+
         lines = cli_response.strip().splitlines()
-
-        # Find header line index and header columns
-        header_line_index = None
-        headers = []
+        separator_index = None
         for i, line in enumerate(lines):
-            if '|' in line and '-' not in line:
-                header_line_index = i
-                headers = [h.strip().lower().replace(' ', '_') for h in line.split('|')]
-                # Remove empty headers if any (e.g., trailing empty after last '|')
-                headers = [h for h in headers if h]
+            if set(line.strip()) <= set("-+|"):
+                separator_index = i
                 break
 
-        if header_line_index is None or not headers:
-            return {'neighbors': []}
+        if separator_index is None:
+            result["lldp_neighbors"] = neighbors
+            return result
 
-        # Find separator line index (line with only '-', '+', '|', and spaces)
-        separator_line_index = None
-        for i in range(header_line_index + 1, len(lines)):
-            line = lines[i]
-            if set(line.strip()) <= set('-+| '):
-                separator_line_index = i
-                break
+        data_lines = lines[separator_index + 1:]
 
-        if separator_line_index is None:
-            return {'neighbors': []}
-
-        # Parse each data line after separator line until no more lines or empty lines
-        for line in lines[separator_line_index + 1:]:
-            if not line.strip():
+        for line in data_lines:
+            if not line.strip() or set(line.strip()) <= set("-+|"):
                 continue
-            if '|' not in line:
+            parts = [part.strip() for part in line.split('|')]
+            if len(parts) < 4:
                 continue
-            # Split line by '|' and strip each field
-            fields = [field.strip() for field in line.split('|')]
-            # Remove empty trailing fields caused by trailing '|'
-            fields = [f for f in fields if f]
+            interface, neighbor_system_name, neighbor_interface, neighbor_ttl = parts[:4]
 
-            # If number of fields less than headers, pad with empty strings
-            if len(fields) < len(headers):
-                fields += [''] * (len(headers) - len(fields))
-            # If more fields than headers, truncate
-            if len(fields) > len(headers):
-                fields = fields[:len(headers)]
+            neighbor_entry = {
+                "interface": interface,
+                "neighbor_system_name": neighbor_system_name,
+                "neighbor_interface": neighbor_interface,
+                "neighbor_ttl": neighbor_ttl
+            }
+            neighbors.append(neighbor_entry)
 
-            # Map headers to fields
-            neighbor = dict(zip(headers, fields))
-            neighbors.append(neighbor)
-
-        return {'neighbors': neighbors}
+        result["lldp_neighbors"] = neighbors
+        return result
