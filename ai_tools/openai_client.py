@@ -126,7 +126,6 @@ class OpenAIClient:
             {"role": "user", "content": prompt}
         ]
 
-        MAX_ATTEMPTS = 5
         attempt = 0
         fix_required = False
         

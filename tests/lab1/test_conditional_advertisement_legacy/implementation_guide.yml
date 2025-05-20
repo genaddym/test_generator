@@ -16,7 +16,6 @@
     ge400-0/0/34  | tcr01.site10.cran1            | ge400-0/0/34         | 120            |
   decipher_instructions: "return a JSON dict representing of the cli output"
 
-
 - decipher_id: "2"
   input_parameters: "PHY_IF_NAME"
   cli_command: "show config interfaces PHY_IF_NAME"
@@ -53,7 +52,7 @@
     !
   decipher_instructions: "return a JSON dict representing ipv4 and ipv6 addresses of the given interface"
 
-  - decipher_id: "4"
+- decipher_id: "4"
   input_parameters: "LO_IF_NAME"
   cli_command: "show config interfaces LO_IF_NAME"
   cli_output_example: |
@@ -68,7 +67,7 @@
     !
   decipher_instructions: "return a JSON dict representing ipv4 or ipv6 addresses of the given interface"
 
-  - decipher_id: "5"
+- decipher_id: "5"
   input_parameters: "LO_IF_NAME"
   cli_command: "show config interfaces LO_IF_NAME"
   cli_output_example: |
@@ -82,7 +81,6 @@
       !
     !
   decipher_instructions: "return a JSON dict representing ISIS Instance ID"
-
 
 - step_id: "1"
   input_parameters: ""
