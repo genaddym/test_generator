@@ -16,6 +16,7 @@
     ge400-0/0/34  | tcr01.site10.cran1            | ge400-0/0/34         | 120            |
   decipher_instructions: "return a JSON dict representing of the cli output"
 
+
 - decipher_id: "2"
   input_parameters: "PHY_IF_NAME"
   cli_command: "show config interfaces PHY_IF_NAME"
@@ -81,6 +82,44 @@
       !
     !
   decipher_instructions: "return a JSON dict representing ISIS Instance ID"
+
+- decipher_id: "6"
+  input_parameters: ["INSTANCE_ID", "LO_IF_NAME"]
+  cli_command: "show config protocols isis instance INSTANCE_ID interface LO_IF_NAME"
+  cli_output_example: |
+    # asbr01.site10.cran1 config-start [04-May-2025 17:02:30 UTC]
+
+    protocols
+      isis
+        instance 33287
+          interface lo4001
+            address-family ipv4-unicast
+              conditional-adv policy IPV4-LEGACY-AR-P2P
+              metric level level-2 1
+              prefix-sid flex-algo 128 label 406075 prefix-type anycast
+              prefix-sid label 406025 prefix-type anycast
+              tag level level-2 5
+            !
+          !
+        !
+      !
+    !
+  decipher_instructions: "return a JSON dict representing ISIS configuration for specified INSTANCE_ID and interface name. Fetch the conditional-adv policy name per address-family"
+
+- decipher_id: "7"
+  input_parameters: "POLICY"
+  cli_command: "show policy POLICY"
+  cli_output_example: |
+    asbr01.site10.cran1# show policy IPV4-LEGACY-AR-P2P
+
+    policy IPV4-LEGACY-AR-P2P
+      rule 10 allow
+        match rib-has-route 96.217.3.188/30 protocol connected
+      !
+    !
+  decipher_instructions: "return a JSON dict representing policy rules"
+
+
 
 - step_id: "1"
   input_parameters: ""
