@@ -27,6 +27,46 @@ class OpenAIClient:
         
         self.client = OpenAI(api_key=self.api_key)
     
+    def sanitize_folder_name(self, name: str) -> str:
+        """
+        Sanitize a string to be used as a folder name by removing illegal characters.
+        
+        Args:
+            name (str): Original name
+            
+        Returns:
+            str: Sanitized folder name
+        """
+        # Remove or replace illegal characters for folder names
+        # Illegal characters: < > : " | ? * \ / and control characters
+        # Also remove brackets, parentheses, and other problematic characters
+        illegal_chars = r'[<>:"|?*\\/#\[\](){}@!$%^&+=;,\'`~]'
+        
+        # Replace illegal characters with underscores
+        sanitized = re.sub(illegal_chars, '_', name)
+        
+        # Replace multiple consecutive underscores with single underscore
+        sanitized = re.sub(r'_+', '_', sanitized)
+        
+        # Replace spaces with underscores
+        sanitized = sanitized.replace(' ', '_')
+        
+        # Remove leading and trailing underscores and dots
+        sanitized = sanitized.strip('_.')
+        
+        # Convert to lowercase
+        sanitized = sanitized.lower()
+        
+        # Ensure it's not empty and doesn't start with a dot
+        if not sanitized or sanitized.startswith('.'):
+            sanitized = 'folder_' + sanitized.lstrip('.')
+        
+        # Limit length to avoid filesystem issues
+        if len(sanitized) > 200:
+            sanitized = sanitized[:200].rstrip('_')
+        
+        return sanitized
+
     def run_pytest(self, test_file: str) -> Tuple[int, str]:
         """
         Run pytest in a subprocess and capture its output.
@@ -55,19 +95,39 @@ class OpenAIClient:
         
         return result.returncode, result.stdout + result.stderr
 
-    def create_decipher(self, step: dict, command_folder: str) -> dict:
+    def create_decipher(self, step: dict, test_folder_path: str) -> dict:
+        import pudb; pudb.set_trace()
+
+        # todo understand the cli command and create a folder name from it
+        prompt = f"""
+        You are a Python network automation expert specializing in CLI command parsing and testing.
+        Based on the following step details, extract the CLI command from the step details. 
+        Return only the CLI command, no other text.
         """
-        Generate a decipher and unit test for a single step, then verify the implementation.
+
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": step[step["description_key"]]}
+        ]
+
+        print(f"Sending prompt to OpenAI to extract CLI command...")
+        response = self.client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            temperature=0.1
+        )
+
+        # Extract code from response
+        content = response.choices[0].message.content
+        print(f"Received response from OpenAI: {content}")
+        cli_command = content.strip()
+        step["cli_command"] = cli_command
         
-        Args:
-            step (dict): Step details containing command_id, cli_command, cli_output_example, etc.
-            command_folder (str): Path to the folder where decipher and test files should be created
-            
-        Returns:
-            dict: Updated step dictionary with additional metadata
-        """
-        # Create class name from folder name
-        folder_name = os.path.basename(command_folder)
+        # Create folder name from CLI command if available, otherwise use decipher_id
+        folder_name = self.sanitize_folder_name(cli_command)
+        command_folder = os.path.join(test_folder_path, folder_name)
+        os.makedirs(command_folder, exist_ok=True)
+
         class_name = ''.join(word.capitalize() for word in folder_name.split('_'))
         step["class_name"] = f"{class_name}Decipher"
         
@@ -81,8 +141,9 @@ class OpenAIClient:
         You are a Python network automation expert specializing in CLI command parsing and testing.
         
         Based on the following step details, generate three sections:
-        1. A decipher class that inherits from DecipherBase and implements the decipher method
-        2. A unit test class that tests the decipher using the provided CLI output
+        1. The decipher should inherit from Decipher, implement the `decipher` method, 
+        extract all the relevant values that are needed for the test step, and return them in a dictionary.
+        2. A unit test class that tests the decipher using the provided CLI output. Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example.
         3. An explanation of the implementation and any important design decisions
         
         Requirements:
@@ -315,7 +376,7 @@ class OpenAIClient:
         
         return test_file, template_content
 
-    def create_test_step(self, project_context: str, code_snippets: str, deciphers_map: dict, step: dict, test_file_path: str, test_file_content: str, input_parameters: dict = None) -> dict:
+    def create_test_step(self, zproject_context: str, zcode_snippets: str, deciphers_map: dict, step: dict, test_file_path: str, test_file_content: str, input_parameters: dict = None) -> dict:
         """
         Generate a test step implementation using AI.
         
@@ -358,10 +419,10 @@ class OpenAIClient:
         The implementation should be added to the test method in the test class.
         
         Project Context:
-        {project_context}
+        {zproject_context}
         
         Code Snippets:
-        {code_snippets}
+        {zcode_snippets}
         
         Current test file content:
         {test_file_content}
@@ -458,12 +519,12 @@ class OpenAIClient:
     def generate_test(self, test_name: str):
         test_folder_path = os.path.join("tests", "lab1", test_name)
         with open("project_description.txt", "r") as f:
-            project_context = f.read()
+            zproject_context = f.read()
 
         with open("code_snippets.py", "r") as f:
-            code_snippets = f.read()
+            zcode_snippets = f.read()
 
-        guide_file = os.path.join(test_folder_path, "implementation_guide.yml")
+        guide_file = os.path.join(test_folder_path, "prompt.yml")
         with open(guide_file, "r") as f:
             steps = yaml.safe_load(f)
 
@@ -471,23 +532,23 @@ class OpenAIClient:
         test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
 
         # 1. create deciphers
-        # Filter steps to only include those with decipher_id
-        deciphers = [step for step in steps if "decipher_id" in step]
+        # Filter steps to only include those with cli_output_example
+        deciphers = []
+        for step in steps:
+            if "cli_output_example" in step:
+                # Generate a decipher_id from the step key (e.g., "step 1" -> "step_1_decipher")
+                step_key = list(step.keys())[0]  # Get the first key (e.g., "step 1")
+                step["description_key"] = step_key
+                decipher_id = f"{step_key.replace(' ', '_')}_decipher"
+                step["decipher_id"] = decipher_id
+                deciphers.append(step)
+        
         deciphers_map = {decipher["decipher_id"]: decipher for decipher in deciphers}
 
-        for decipher in deciphers:
-            decipher["unit_test_instructions"] = "Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example."
-
-            if "decipher_instructions" in decipher:
-                decipher["decipher_instructions"] = "The decipher should inherit from Decipher, implement the `decipher` method, and " + decipher["decipher_instructions"]
-
-            # Create folder name from CLI command
-            folder_name = decipher["cli_command"].replace(" ", "_").replace("/", "_")
-            command_folder = os.path.join(test_folder_path, folder_name)
-            os.makedirs(command_folder, exist_ok=True)
-
+        for step in deciphers:
+            
             # Create decipher
-            decipher = self.create_decipher(decipher, command_folder)
+            decipher = self.create_decipher(step, test_folder_path)
 
         # Update the implementation_guide file with the deciphers
         # Create a map of decipher_id to updated decipher
@@ -504,8 +565,8 @@ class OpenAIClient:
 
         # 2. create the test steps
         # Filter steps to only include those with step_id
-        steps = [step for step in steps if "step_id" in step]
+        test_steps = [step for step in steps if "step_id" in step]
 
-        for step in steps:
-            step = self.create_test_step(project_context, code_snippets, deciphers_map, step, test_file_path, test_file_content)
+        for step in test_steps:
+            step = self.create_test_step(zproject_context, zcode_snippets, deciphers_map, step, test_file_path, test_file_content)
 

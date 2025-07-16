@@ -1,10 +1,8 @@
 - step 1: Retrieve the devices for role a and role z, provided by the user as --device_a and --device_z pytest parameters.
 - step 2: on device a, execute the cli command "show isis neighbors | inc ROLE_Z". Extract the bundle id from the first line which is the bundle id of the device z name.
-  cli_output_example:
-  ```
-  pcr01.site10.cran1             bundle-178              L2     Up            1M6d18h45m57s        28        point-to-point  
-  pcr02.site10.cran1             bundle-223              L2     Up            1M3w14h29m41s        23        point-to-point  
-  ```
+  cli_output_example: |
+    pcr01.site10.cran1             bundle-178              L2     Up            1M6d18h45m57s        28        point-to-point  
+    pcr02.site10.cran1             bundle-223              L2     Up            1M3w14h29m41s        23        point-to-point  
 - step 3: open IXIA connection and start the traffic items.
    Traffic items should be provided as a list in config.yml file. 
    Start traffic, wait 10 seconds and validate no traffic loss.
