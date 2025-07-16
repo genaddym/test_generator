@@ -1,133 +1,54 @@
-- decipher_id: "1"
-  input_parameters: ""
-  cli_command: "show lldp neighbors"
-  cli_output_example: |
-    Interface     | Neighbor System Name          | Neighbor interface   | Neighbor TTL   |
+- cli_command: show lldp neighbors
+  cli_output_example: 'Interface     | Neighbor System Name          | Neighbor interface   |
+    Neighbor TTL   |
+
     -------------+-------------------------------+----------------------+----------------|
+
     ge100-0/0/2/0 | arvc01.site50.cran1           | ge100-0/0/22         | 120            |
+
     ge100-0/0/2/1 | arvc01.site50.cran1           | ge100-0/0/21         | 120            |
+
     ge10-0/0/3/0  | ar01.site50.cran1.comcast.net | xe-0/2/2             | 120            |
+
     ge10-0/0/3/1  | ar01.site50.cran1.comcast.net | xe-0/2/3             | 120            |
+
     ge400-0/0/25  | tcr02.site10.cran1            | ge400-0/0/33         | 120            |
+
     ge400-0/0/26  | tcr02.site10.cran1            | ge400-0/0/34         | 120            |
+
     ge400-0/0/27  |                               |                      |                |
+
     ge400-0/0/28  |                               |                      |                |
+
     ge400-0/0/33  | tcr01.site10.cran1            | ge400-0/0/33         | 120            |
+
     ge400-0/0/34  | tcr01.site10.cran1            | ge400-0/0/34         | 120            |
-  decipher_instructions: "return a JSON dict representing of the cli output"
 
+    '
+  decipher_id: '1'
+  decipher_instructions: The decipher should inherit from Decipher, implement the
+    `decipher` method, and return a JSON dict representing of the cli output
+  import_path: show_lldp_neighbors.decipher
+  input_parameters: ''
+  
+- class_name: ShowConfigInterfacesPhyIfNameDecipher
+  cli_command: show config interfaces PHY_IF_NAME
+  cli_output_example: "interfaces\n  ge100-0/0/2/0\n    admin-state enabled\n    bundle-id\
+    \ 217\n    carrier-delay down 0 up 5000\n    description \"PHY|100G|AGG-MEMBER|CORE|type:JANUS-P2P|rhost:ar-vc01.site50.cran1|rport:ge100-0/0/22|lagg:de217|ragg:de217\"\
+    \n    fec rs-fec-544-514\n  !\n!\n"
+  decipher_id: '2'
+  decipher_instructions: The decipher should inherit from Decipher, implement the
+    `decipher` method, and return a JSON dict representing bundle-ID from the cli
+    output
+  input_parameters: PHY_IF_NAME
 
-- decipher_id: "2"
-  input_parameters: "PHY_IF_NAME"
-  cli_command: "show config interfaces PHY_IF_NAME"
-  cli_output_example: |
-    interfaces
-      ge100-0/0/2/0
-        admin-state enabled
-        bundle-id 217
-        carrier-delay down 0 up 5000
-        description "PHY|100G|AGG-MEMBER|CORE|type:JANUS-P2P|rhost:ar-vc01.site50.cran1|rport:ge100-0/0/22|lagg:de217|ragg:de217"
-        fec rs-fec-544-514
-      !
-    !
-  decipher_instructions: "return a JSON dict representing bundle-ID from the cli output"
-
-- decipher_id: "3"
-  input_parameters: "BUNDLE_IF_NAME"
-  cli_command: "show config interfaces BUNDLE_IF_NAME"
-  cli_output_example: |
-    # asbr01.site10.cran1 config-start [04-May-2025 17:01:03 UTC]
-
-    interfaces
-      bundle-217
-        admin-state enabled
-        description "AGG|2x100G|L3|CORE|type:JANUS-P2P|rhost:ar-vc01.site50.cran1|ragg:de217"
-        ipv4-address 96.217.1.25/30
-        ipv6-address 2001:558:4c0:470::25/64
-        ipv6-admin-state enabled
-        min-links 2
-        mtu 9192
-        qos policy CORE-INPUT-QOS direction in
-        qos policy CORE-OUTPUT-QOS direction out
-      !
-    !
-  decipher_instructions: "return a JSON dict representing ipv4 and ipv6 addresses of the given interface"
-
-- decipher_id: "4"
-  input_parameters: "LO_IF_NAME"
-  cli_command: "show config interfaces LO_IF_NAME"
-  cli_output_example: |
-    # asbr01.site10.cran1 config-start [04-May-2025 17:01:32 UTC]
-
-    interfaces
-      lo4001
-        admin-state enabled
-        description "LOG|LOOPBACK|L3|CORE|type:IPV4-ANYCAST|link-group:ASBR-AR"
-        ipv4-address 96.109.183.227/32
-      !
-    !
-  decipher_instructions: "return a JSON dict representing ipv4 or ipv6 addresses of the given interface"
-
-- decipher_id: "5"
-  input_parameters: "LO_IF_NAME"
-  cli_command: "show config interfaces LO_IF_NAME"
-  cli_output_example: |
-    # asbr01.site10.cran1 config-start [04-May-2025 17:01:32 UTC]
-
-    interfaces
-      lo4001
-        admin-state enabled
-        description "LOG|LOOPBACK|L3|CORE|type:IPV4-ANYCAST|link-group:ASBR-AR"
-        ipv4-address 96.109.183.227/32
-      !
-    !
-  decipher_instructions: "return a JSON dict representing ISIS Instance ID"
-
-- decipher_id: "6"
-  input_parameters: ["INSTANCE_ID", "LO_IF_NAME"]
-  cli_command: "show config protocols isis instance INSTANCE_ID interface LO_IF_NAME"
-  cli_output_example: |
-    # asbr01.site10.cran1 config-start [04-May-2025 17:02:30 UTC]
-
-    protocols
-      isis
-        instance 33287
-          interface lo4001
-            address-family ipv4-unicast
-              conditional-adv policy IPV4-LEGACY-AR-P2P
-              metric level level-2 1
-              prefix-sid flex-algo 128 label 406075 prefix-type anycast
-              prefix-sid label 406025 prefix-type anycast
-              tag level level-2 5
-            !
-          !
-        !
-      !
-    !
-  decipher_instructions: "return a JSON dict representing ISIS configuration for specified INSTANCE_ID and interface name. Fetch the conditional-adv policy name per address-family"
-
-- decipher_id: "7"
-  input_parameters: "POLICY"
-  cli_command: "show policy POLICY"
-  cli_output_example: |
-    asbr01.site10.cran1# show policy IPV4-LEGACY-AR-P2P
-
-    policy IPV4-LEGACY-AR-P2P
-      rule 10 allow
-        match rib-has-route 96.217.3.188/30 protocol connected
-      !
-    !
-  decipher_instructions: "return a JSON dict representing policy rules"
-
-
-
-- step_id: "1"
-  input_parameters: ""
-  related_decipher_id: ""
-  description: "Fetch devices by role asbr and by vendor drivenets"
-
-- step_id: "2"
-  input_parameters: ""
-  related_decipher_id: "1"
-  description: "Iterate over the drivenets asbr devices. Execute the cli_command. In the command output, select items that their 'Neighbor System Name' starts with '^ar0\\d+' and/or '^arvc\\d+'"
-
+- description: Fetch devices by role asbr and by vendor drivenets
+  input_parameters: ''
+  related_decipher_id: ''
+  step_id: '1'
+- description: Iterate over the drivenets asbr devices. Execute the cli_command. In
+    the command output, select items that their 'Neighbor System Name' starts with
+    '^ar0\d+' and/or '^arvc\d+'
+  input_parameters: ''
+  related_decipher_id: '1'
+  step_id: '2'

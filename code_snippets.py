@@ -9,12 +9,52 @@ drivenets_pcrs = topology_manager.get_devices(
     vendors=[Vendors.DRIVENETS],
 )
 
-# example of sending a command and deciphering the output
-cli_session = device_manager.cli_sessions[device_name]
-bgp_route = cli_session.send_command(
-            command=f"show bgp route {prefix}",
-            decipher=ShowBgpRouteDecipher,
-        )
+# example of iterating over devices
+for device in drivenets_pcrs:
+    # example of sending a command and deciphering the output
+    cli_session = device_manager.cli_sessions[device.name]
+    bgp_route = cli_session.send_command(
+                command=f"show bgp route {prefix}",
+                decipher=ShowBgpRouteDecipher,
+            )
+
+    # example of configuring a device
+    cli_session.edit_config(f"interfaces {interface_name} admin-state enabled"
+        
+    )
+
+
+# example of using IXIA
+# IMPORTANT: traffic manager fixture should be used for executing IXIA commands
+# reset_ixia fixture should be used as well in all tests that involve IXIA for resetting IXIA before the test
+
+# example of using IXIA auxiliary functions
+from tests.common.ixia import (
+    CompareType,
+    validate_no_traffic_loss,
+    validate_packet_loss_duration,
+)
+
+# example of using IXIA connection
+ix_conn = traffic_manager.connection
+if not ix_conn:
+    error_msg = (
+        "Traffic generator is not connected. "
+    )
+    raise AssertionError(error_msg)
+
+# example of enabling/disabling traffic items
+ix_conn.enable_disable_all_traffic_items(enable=False)
+ix_conn.enable_disable_traffic_item_by_name(
+    list_of_trafficItemName=self.TRAFFIC_ITEM_NAMES, enable=True
+)
+
+# example of starting/stopping traffic
+ix_conn.start_traffic(with_capture=True)
+ix_conn.stop_traffic()
+
+# example of validating traffic statistics
+validate_no_traffic_loss(ix_conn, clear_stats=False)
 
 
 # Collection of all validation errors and tracking device failures
