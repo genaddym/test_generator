@@ -97,15 +97,22 @@ class OpenAIClient:
         return result.returncode, result.stdout + result.stderr
 
     def create_decipher(self, step: dict, test_folder_path: str) -> dict:
-        prompt = f"""
-        You are a Python network automation expert specializing in CLI command parsing and testing.
-        Based on the following step details, extract the CLI command from the step details. 
-        Return only the CLI command, no other text.
-        """
+        prompt = self._create_structured_prompt(
+            role="Python network automation expert specializing in CLI command parsing and testing",
+            task="Extract the CLI command from the provided step details.",
+            requirements=[
+                "MUST return only the CLI command text",
+                "MUST NOT include any explanations or additional text",
+                "MUST extract the exact command that needs to be executed"
+            ],
+            context={
+                "step_details": step[step["description_key"]]
+            }
+        )
 
         messages = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": step[step["description_key"]]}
+            {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing."},
+            {"role": "user", "content": prompt}
         ]
 
         print(f"Sending prompt to OpenAI to extract CLI command...")
@@ -118,6 +125,8 @@ class OpenAIClient:
 
         # Extract code from response
         content = response.choices[0].message.content
+        if not content:
+            raise ValueError("OpenAI returned empty response for CLI command extraction")
         print(f"Received response from OpenAI: {content}")
         cli_command = content.strip()
         step["cli_command"] = cli_command
@@ -135,50 +144,41 @@ class OpenAIClient:
         import_path = relative_path.replace(os.path.sep, '.')
         step["import_path"] = f"{import_path}.decipher"
 
-        # Generate initial implementation
-        prompt = f"""
-        You are a Python network automation expert specializing in CLI command parsing and testing.
-        
-        Based on the following step details, generate three sections:
-        1. The decipher should inherit from Decipher, implement the `decipher` method, 
-        extract all the relevant values that are needed for the test step, and return them in a dictionary.
-        2. A unit test class that tests the decipher using the provided CLI output. Write a unit test code using the provided CLI output example. Validate that the decipher correctly parses the provided CLI output example.
-        3. An explanation of the implementation and any important design decisions
-        
-        Requirements:
-        - The decipher class must be named '{class_name}Decipher'. All non-alphanumeric characters should be removed.
-        - The class name must use CamelCase format (e.g., 'ShowVersionDecipher' not 'Show-version-decipher')
-        - All JSON keys must use underscores instead of hyphens (e.g., 'command_output' not 'command-output')
-        - The decipher method must be defined exactly as: '@staticmethod def decipher(cli_response: str)'
-        - The decipher must implement the decipher method
-        - The unit test class must be named exactly 'Test{class_name}Decipher'
-        - The unit test must use the provided CLI output example
-        - Unit tests must use pytest framework (not unittest)
-        - Both files must be properly formatted with imports and docstrings
-        - The class docstring must include the CLI command being parsed (e.g., 'Parser for "show version" command')
-        - Do not add any suffixes or prefixes to the class names
-        - Do not include any markdown formatting or explanations in the code
-        - Do not include any code blocks or backticks
-        - The code must be directly executable Python code
-        - IMPORTANT: In the unit test, define the expected output as a single line variable named 'expected_output' with a valid JSON string
-        - Example of expected_output format: expected_output = {{"key": "value", "nested": {{"key": "value"}}}}
-        - IMPORTANT: In the unit test file, use relative imports for importing the decipher class (e.g., 'from .decipher import ShowLldpNeighborsDecipher')
-        - IMPORTANT: In the decipher file, import the base class using 'from tests.base.decipher import Decipher'
-        
-        Your response must be in this exact format:
-        
-        # decipher.py
-        [Python code for decipher.py]
-        
-        # unit_test.py
-        [Python code for unit_test.py]
-        
-        # explanation
-        [Short summary of your recent changes]
-        
-        Step details:
-        {yaml.dump(step, default_flow_style=False)}
-        """
+        # Generate initial implementation using structured prompt
+        prompt = self._create_structured_prompt(
+            role="Python network automation expert specializing in CLI command parsing and testing",
+            task=f"Generate a decipher class named '{class_name}Decipher' and corresponding unit test to parse CLI command output and extract relevant data for test automation.",
+            requirements=[
+                f"MUST name the decipher class exactly '{class_name}Decipher' (CamelCase, no extra suffixes)",
+                "MUST inherit from Decipher base class",
+                "MUST implement exactly: '@staticmethod def decipher(cli_response: str)'",
+                f"MUST name unit test class exactly 'Test{class_name}Decipher'",
+                "MUST use pytest framework (not unittest)",
+                "MUST use underscores for JSON keys (not hyphens): 'command_output' not 'command-output'",
+                "MUST define expected_output as single line variable with valid JSON string",
+                "MUST use relative imports in unit test: 'from .decipher import {class_name}Decipher'",
+                "MUST import base class: 'from tests.base.decipher import Decipher'",
+                "MUST include CLI command in class docstring",
+                "MUST write directly executable Python code (no markdown/backticks)",
+                "MUST format both files with proper imports and docstrings",
+                "MUST validate decipher correctly parses the provided CLI output example"
+            ],
+            context={
+                "cli_command": cli_command,
+                "step_details": yaml.dump(step, default_flow_style=False),
+                "class_name": class_name
+            },
+            output_format="""
+# decipher.py
+[Python code for decipher.py]
+
+# unit_test.py
+[Python code for unit_test.py]
+
+# explanation
+[Short summary of implementation and design decisions]
+"""
+        )
         
         messages = [
             {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing. You must respond with executable Python code and explanations in the specified format."},
@@ -204,6 +204,12 @@ class OpenAIClient:
                 print("Received response from OpenAI")
                 # Extract code from response
                 content = response.choices[0].message.content
+                if not content:
+                    messages.append({
+                        "role": "user",
+                        "content": "OpenAI returned empty response. Please provide the response in the correct format with all required sections: # decipher.py, # unit_test.py, and # explanation."
+                    })
+                    continue
                 
                 # Split into files using the file markers
                 parts = content.split("# decipher.py")
@@ -376,24 +382,85 @@ class OpenAIClient:
                 f.write(f"{message['role']}: {message['content']}\n")
         import pudb; pudb.set_trace()
 
-    def create_test_step(self, 
-                        zcode_snippets: str, 
-                        deciphers_map: dict, 
-                        step: dict, 
-                        test_file_path: str, 
-                        test_file_content: str,
-                        previous_steps_description:list[str]) -> dict:
-        # Get decipher information if available
+    def _create_structured_prompt(self, 
+                                 role: str,
+                                 task: str, 
+                                 requirements: list[str],
+                                 context: Optional[dict] = None,
+                                 examples: Optional[str] = None,
+                                 output_format: Optional[str] = None) -> str:
+        """
+        Create a well-structured prompt for AI that's easy to understand.
+        
+        Args:
+            role: The role the AI should take (e.g., "Python network automation expert")
+            task: The main task description
+            requirements: List of specific requirements
+            context: Dictionary of context information (optional)
+            examples: Example content (optional)  
+            output_format: Expected output format (optional)
+        """
+        sections = []
+        
+        # Role definition
+        sections.append(f"You are a {role}.")
+        sections.append("")
+        
+        # Main task
+        sections.append("## TASK")
+        sections.append(task)
+        sections.append("")
+        
+        # Context (if provided)
+        if context:
+            sections.append("## CONTEXT")
+            for key, value in context.items():
+                sections.append(f"### {key.replace('_', ' ').title()}")
+                sections.append(str(value))
+                sections.append("")
+        
+        # Requirements
+        if requirements:
+            sections.append("## REQUIREMENTS")
+            for i, req in enumerate(requirements, 1):
+                # Mark critical requirements
+                if any(keyword in req.lower() for keyword in ['must', 'critical', 'important', 'exactly']):
+                    sections.append(f"🔴 **CRITICAL {i}**: {req}")
+                else:
+                    sections.append(f"• {req}")
+            sections.append("")
+        
+        # Examples (if provided)
+        if examples:
+            sections.append("## EXAMPLES")
+            sections.append(examples)
+            sections.append("")
+        
+        # Output format (if provided)
+        if output_format:
+            sections.append("## OUTPUT FORMAT")
+            sections.append("⚠️ **IMPORTANT**: Your response must be in this exact format:")
+            sections.append(output_format)
+            sections.append("")
+        
+        return "\n".join(sections)
+
+    def _get_decipher_info(self, step: dict, deciphers_map: dict) -> tuple[str, str, str]:
+        """
+        Extract decipher information from the step and deciphers_map.
+        
+        Returns:
+            tuple[str, str, str]: (decipher_info, cli_command, decipher_class_name)
+        """
         decipher_info = ""
         cli_command = ""
         decipher_class_name = "None"
+        
         if "decipher_id" in step:
             decipher = deciphers_map.get(step["decipher_id"])
             if decipher:
-                # Apply input parameters to CLI command if available
                 cli_command = decipher['cli_command']
                 decipher_class_name = decipher['class_name']
-
                 decipher_info = f"""
                 Related Decipher Information:
                 - Import: from {decipher['import_path']} import {decipher_class_name}
@@ -401,114 +468,152 @@ class OpenAIClient:
                 - CLI Command: {cli_command}
                 - Expected Output Format: {yaml.dump(decipher.get('json_example', {}), default_flow_style=False)}
                 """
+        
+        return decipher_info, cli_command, decipher_class_name
 
-        prompt = f"""
-        You are a Python network automation expert specializing in test automation.
-        
-        Based on the following code snippets, step details, and current test file content, implement the test step.
-        The implementation should be added to the test method in the test class.
-        
-        Code Snippets:
-        {zcode_snippets}
-        
-        Current test file content:
-        {test_file_content}
+    def _create_test_step_prompt(self, 
+                                zcode_snippets: str,
+                                test_file_content: str,
+                                previous_steps_description: list[str],
+                                step: dict,
+                                decipher_info: str) -> str:
+        """Create a structured prompt for test step implementation."""
+        return self._create_structured_prompt(
+            role="Python network automation expert specializing in test automation",
+            task="Implement a test step by updating the existing test file content. Add the implementation to the test method following the existing structure.",
+            requirements=[
+                "MUST follow the existing test structure and patterns",
+                "MUST add clear comments explaining the implementation",
+                "MUST use the code snippets as reference for implementation patterns",
+                "If decipher information is provided:",
+                "  • MUST use the import statement to import the decipher class",
+                "  • MUST execute command using: cli_session.send_command(command=CLI_COMMAND, decipher=DECIPHER_CLASS_NAME)",
+                "  • MUST use the expected output format to validate results",
+                "IMPORTANT: Extract step logic into separate method if possible",
+                "IMPORTANT: Add logger at beginning of test step with step number",
+                "IMPORTANT: Generate complete updated test file content"
+            ],
+            context={
+                "code_snippets": zcode_snippets,
+                "current_test_file": test_file_content,
+                "previous_steps": previous_steps_description,
+                "step_details": yaml.dump(step, default_flow_style=False),
+                "decipher_info": decipher_info
+            },
+            output_format="""
+# new_file_content
+[Complete updated test file content]
 
-        Previous steps:
-        {previous_steps_description}
-        
-        Step details:
-        {yaml.dump(step, default_flow_style=False)}
-        
-        {decipher_info}
-        
-        Requirements:
-        - The implementation must follow the existing test structure
-        - Add clear comments explaining the implementation
-        - Use the code snippets as reference for implementation patterns
-        - If decipher information is provided:
-          * Use the import statement to import the decipher class
-          * Use the CLI command to execute the command (parameters have been applied)
-          * Execute the command and decipher the output using the provided decipher class as follows:
-            cli_session = device_manager.cli_sessions[device_name]
-            bgp_route = cli_session.send_command(
-                command=CLI_COMMAND,
-                decipher=DECIPHER_CLASS_NAME,
-            )
-          * Use the expected output format to validate the results
-        - IMPORTANT: Extract the step logic into separate method, if possible
-        - IMPORTANT: Add a logger to the beggining of the test step with the step number. Example:
-        logger.info(f"Retrieving devices for roles A and Z")
+# explanation
+[Explanation of changes made]
+"""
+        )
 
-        IMPORTANT: Your response must be in this exact format:
-        
-        # new_file_content
-        [Complete updated test file content]
-        
-        # explanation
-        [Explanation of changes made]
+    def _process_test_step_response(self, content: str, messages: list[dict]) -> tuple[Optional[str], Optional[str], bool]:
         """
+        Process OpenAI response for test step creation.
         
+        Returns:
+            tuple[Optional[str], Optional[str], bool]: (new_file_content, explanation, success)
+        """
+        # Split into new file content and explanation
+        parts = content.split("# new_file_content")
+        if len(parts) != 2:
+            messages.append({
+                "role": "user",
+                "content": "Your response is missing the '# new_file_content' marker. Please provide the response in the correct format with new file content and explanation sections."
+            })
+            return None, None, False
+        
+        file_content_part = parts[1].split("# explanation")
+        if len(file_content_part) != 2:
+            messages.append({
+                "role": "user",
+                "content": "Your response is missing the '# explanation' marker. Please provide the response in the correct format with new file content and explanation sections."
+            })
+            return None, None, False
+        
+        new_file_content = file_content_part[0].strip()
+        explanation = file_content_part[1].strip()
+        
+        return new_file_content, explanation, True
+
+    def create_test_step(self, 
+                        zcode_snippets: str, 
+                        deciphers_map: dict, 
+                        step: dict, 
+                        test_file_path: str, 
+                        test_file_content: str,
+                        previous_steps_description: list[str]) -> dict:
+        """
+        Create a test step implementation by updating the test file.
+        
+        Args:
+            zcode_snippets: Code snippets for reference patterns
+            deciphers_map: Map of available deciphers
+            step: Step definition to implement
+            test_file_path: Path to the test file to update
+            test_file_content: Current content of the test file
+            previous_steps_description: List of previous step descriptions
+            
+        Returns:
+            dict: Updated step with test_file_content and explanation
+        """
+        # Extract decipher information
+        decipher_info, cli_command, decipher_class_name = self._get_decipher_info(step, deciphers_map)
+        
+        # Create structured prompt
+        prompt = self._create_test_step_prompt(
+            zcode_snippets, test_file_content, previous_steps_description, step, decipher_info
+        )
+        
+        # Prepare messages for OpenAI
         messages = [
             {"role": "system", "content": "You are a Python network automation expert specializing in test automation. You must respond with executable Python code that follows the project's structure and standards."},
             {"role": "user", "content": prompt}
         ]
 
-        # For debug purposes, save the messages into a file
-
-
-        attempt = 0
-        
-        while attempt < MAX_ATTEMPTS:
+        # Process with retry logic
+        for attempt in range(MAX_ATTEMPTS):
             print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {MAX_ATTEMPTS}")
             self._save_messages(messages)
+            
             response = self.client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=messages,
                 temperature=0.1
             )
-
             print("Received response from OpenAI")
             
-            # Extract code from response
+            # Check for empty response
             content = response.choices[0].message.content
-            
-            # Split into new file content and explanation
-            parts = content.split("# new_file_content")
-            if len(parts) != 2:
+            if not content:
                 messages.append({
                     "role": "user",
-                    "content": "Your response is missing the '# new_file_content' marker. Please provide the response in the correct format with new file content and explanation sections."
+                    "content": "OpenAI returned empty response. Please provide the response in the correct format with new file content and explanation sections."
                 })
-                attempt += 1
                 continue
             
-            file_content_part = parts[1].split("# explanation")
-            if len(file_content_part) != 2:
-                messages.append({
-                    "role": "user",
-                    "content": "Your response is missing the '# explanation' marker. Please provide the response in the correct format with new file content and explanation sections."
-                })
-                attempt += 1
-                continue
+            # Process the response
+            new_file_content, explanation, success = self._process_test_step_response(content, messages)
             
-            new_file_content = file_content_part[0].strip()
-            explanation = file_content_part[1].strip()
-            
-            # Log the explanation
-            print("\nImplementation Explanation:")
-            print("=" * 80)
-            print(explanation)
-            print("=" * 80)
-            
-            # Write the new file content
-            with open(test_file_path, "w") as f:
-                f.write(new_file_content)
-            
-            step["test_file_content"] = new_file_content
-            step["explanation"] = explanation
-            return step
+            if success and new_file_content and explanation:
+                # Log the explanation
+                print("\nImplementation Explanation:")
+                print("=" * 80)
+                print(explanation)
+                print("=" * 80)
+                
+                # Write the new file content
+                with open(test_file_path, "w") as f:
+                    f.write(new_file_content)
+                
+                step["test_file_content"] = new_file_content
+                step["explanation"] = explanation
+                return step
 
+        # If we reach here, all attempts failed
+        print(f"Failed to generate test step after {MAX_ATTEMPTS} attempts")
         return step
 
     def generate_test(self, test_name: str):
@@ -525,7 +630,7 @@ class OpenAIClient:
         test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
         
         # Load existing deciphers_map if it exists, otherwise start with empty dict
-        import pudb; pu.db
+        import pudb; pudb.set_trace()
 
          # TEMPORARY
         deciphers_map_path = os.path.join(test_folder_path, "deciphers_map.pkl")
