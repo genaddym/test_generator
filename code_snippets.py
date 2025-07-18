@@ -14,15 +14,15 @@ for device in drivenets_pcrs:
     # example of sending a command and deciphering the output
     cli_session = device_manager.cli_sessions[device.name]
     bgp_route = cli_session.send_command(
-                command=f"show bgp route {prefix}",
+                command="show bgp route",
                 decipher=ShowBgpRouteDecipher,
             )
 
     # example of configuring a device
-    cli_session.edit_config(f"interfaces {interface_name} admin-state enabled"
-        
-    )
+    cli_session.edit_config("interfaces bundle-1 admin-state enabled")
 
+# example of retrieving pytest parameters
+self.device_a = request.config.getoption("--device-a")
 
 # example of using IXIA
 # IMPORTANT: traffic manager fixture should be used for executing IXIA commands

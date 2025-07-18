@@ -15,7 +15,6 @@ TEST_NAME = "test_link_failure"
 
 def main():
     try:
-        import pudb; pudb.set_trace()
         client = OpenAIClient()
         client.generate_test(TEST_NAME)
 

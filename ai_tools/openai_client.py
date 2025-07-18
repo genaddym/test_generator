@@ -6,6 +6,7 @@ import yaml
 import re
 import json
 import subprocess
+import pickle
 
 OPENAI_MODEL = "gpt-4.1-mini"
 #OPENAI_MODEL = "gpt-4-turbo"
@@ -96,9 +97,6 @@ class OpenAIClient:
         return result.returncode, result.stdout + result.stderr
 
     def create_decipher(self, step: dict, test_folder_path: str) -> dict:
-        import pudb; pudb.set_trace()
-
-        # todo understand the cli command and create a folder name from it
         prompt = f"""
         You are a Python network automation expert specializing in CLI command parsing and testing.
         Based on the following step details, extract the CLI command from the step details. 
@@ -111,6 +109,7 @@ class OpenAIClient:
         ]
 
         print(f"Sending prompt to OpenAI to extract CLI command...")
+        self._save_messages(messages)
         response = self.client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
@@ -157,7 +156,6 @@ class OpenAIClient:
         - Unit tests must use pytest framework (not unittest)
         - Both files must be properly formatted with imports and docstrings
         - The class docstring must include the CLI command being parsed (e.g., 'Parser for "show version" command')
-        - The code must align with the project context and requirements
         - Do not add any suffixes or prefixes to the class names
         - Do not include any markdown formatting or explanations in the code
         - Do not include any code blocks or backticks
@@ -197,6 +195,7 @@ class OpenAIClient:
         while attempt < MAX_ATTEMPTS:
             if not files_exist or fix_required:
                 print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {MAX_ATTEMPTS}")
+                self._save_messages(messages)
                 response = self.client.chat.completions.create(
                     model=OPENAI_MODEL,
                     messages=messages,
@@ -311,7 +310,7 @@ class OpenAIClient:
                     Keep the same class names and ensure the code is directly executable.
                     Remember to define expected_output as a single line variable with a valid JSON string.
                     
-                    Original requirements:
+                    Requirements:
                     - The decipher class must be named '{step["class_name"]}'
                     - The class must inherit from DecipherBase
                     - The decipher method must be defined exactly as: '@staticmethod def decipher(cli_response: str)'
@@ -328,11 +327,6 @@ class OpenAIClient:
                     CLI Output Example:
                     {step["cli_output_example"]}
                     
-                    Decipher Instructions:
-                    {step["decipher_instructions"]}
-                    
-                    Unit Test Instructions:
-                    {step["unit_test_instructions"]}
                     """
                 })
                 attempt += 1
@@ -376,33 +370,29 @@ class OpenAIClient:
         
         return test_file, template_content
 
-    def create_test_step(self, zproject_context: str, zcode_snippets: str, deciphers_map: dict, step: dict, test_file_path: str, test_file_content: str, input_parameters: dict = None) -> dict:
-        """
-        Generate a test step implementation using AI.
-        
-        Args:
-            project_context (str): Project context from project_description.txt
-            code_snippets (str): Code snippets from code_snippets.py
-            deciphers_map (dict): Map of decipher_id to decipher details
-            step (dict): Step details from implementation_guide.yml
-            test_file_path (str): Path to the test file
-            test_file_content (str): Current content of the test file
-            input_parameters (dict, optional): Parameters to be applied to CLI commands
-        """
+    def _save_messages(self, messages: list[dict], file_name: str="last_prompt.txt"):
+        with open(file_name, "w") as f:
+            for message in messages:
+                f.write(f"{message['role']}: {message['content']}\n")
+        import pudb; pudb.set_trace()
+
+    def create_test_step(self, 
+                        zcode_snippets: str, 
+                        deciphers_map: dict, 
+                        step: dict, 
+                        test_file_path: str, 
+                        test_file_content: str,
+                        previous_steps_description:list[str]) -> dict:
         # Get decipher information if available
         decipher_info = ""
         cli_command = ""
         decipher_class_name = "None"
-        if "related_decipher_id" in step:
-            decipher = deciphers_map.get(step["related_decipher_id"])
+        if "decipher_id" in step:
+            decipher = deciphers_map.get(step["decipher_id"])
             if decipher:
                 # Apply input parameters to CLI command if available
                 cli_command = decipher['cli_command']
                 decipher_class_name = decipher['class_name']
-                if input_parameters and "input_parameters" in decipher:
-                    for param in decipher["input_parameters"]:
-                        if param in input_parameters:
-                            cli_command = cli_command.replace(param, str(input_parameters[param]))
 
                 decipher_info = f"""
                 Related Decipher Information:
@@ -415,17 +405,17 @@ class OpenAIClient:
         prompt = f"""
         You are a Python network automation expert specializing in test automation.
         
-        Based on the following project context, code snippets, step details, and current test file content, implement the test step.
+        Based on the following code snippets, step details, and current test file content, implement the test step.
         The implementation should be added to the test method in the test class.
-        
-        Project Context:
-        {zproject_context}
         
         Code Snippets:
         {zcode_snippets}
         
         Current test file content:
         {test_file_content}
+
+        Previous steps:
+        {previous_steps_description}
         
         Step details:
         {yaml.dump(step, default_flow_style=False)}
@@ -435,20 +425,20 @@ class OpenAIClient:
         Requirements:
         - The implementation must follow the existing test structure
         - Add clear comments explaining the implementation
-        - Use the project context and code snippets as reference for implementation patterns
+        - Use the code snippets as reference for implementation patterns
         - If decipher information is provided:
           * Use the import statement to import the decipher class
           * Use the CLI command to execute the command (parameters have been applied)
           * Execute the command and decipher the output using the provided decipher class as follows:
             cli_session = device_manager.cli_sessions[device_name]
             bgp_route = cli_session.send_command(
-                command=f"{cli_command}",
-                decipher={decipher_class_name},
+                command=CLI_COMMAND,
+                decipher=DECIPHER_CLASS_NAME,
             )
           * Use the expected output format to validate the results
-        - Find a comment # Step implementation completed. This is the previous implementation of the test step. Remove this comment and start implementing the new step from this point, if applicable.
-        - At the end of the test step, insert a comment with the following format:
-        # Step implementation completed
+        - IMPORTANT: Extract the step logic into separate method, if possible
+        - IMPORTANT: Add a logger to the beggining of the test step with the step number. Example:
+        logger.info(f"Retrieving devices for roles A and Z")
 
         IMPORTANT: Your response must be in this exact format:
         
@@ -464,15 +454,20 @@ class OpenAIClient:
             {"role": "user", "content": prompt}
         ]
 
+        # For debug purposes, save the messages into a file
+
+
         attempt = 0
         
         while attempt < MAX_ATTEMPTS:
             print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {MAX_ATTEMPTS}")
+            self._save_messages(messages)
             response = self.client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=messages,
                 temperature=0.1
             )
+
             print("Received response from OpenAI")
             
             # Extract code from response
@@ -518,8 +513,6 @@ class OpenAIClient:
 
     def generate_test(self, test_name: str):
         test_folder_path = os.path.join("tests", "lab1", test_name)
-        with open("project_description.txt", "r") as f:
-            zproject_context = f.read()
 
         with open("code_snippets.py", "r") as f:
             zcode_snippets = f.read()
@@ -530,43 +523,56 @@ class OpenAIClient:
 
         # Create test file from template
         test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
+        
+        # Load existing deciphers_map if it exists, otherwise start with empty dict
+        import pudb; pu.db
 
-        # 1. create deciphers
-        # Filter steps to only include those with cli_output_example
-        deciphers = []
+         # TEMPORARY
+        deciphers_map_path = os.path.join(test_folder_path, "deciphers_map.pkl")
+        if os.path.exists(deciphers_map_path):
+            print(f"Loading existing deciphers_map from {deciphers_map_path}")
+            with open(deciphers_map_path, "rb") as f:
+                deciphers_map = pickle.load(f)
+        else:
+        # TEMPORARY
+            deciphers_map = {}
+        
+        steps_description = []
+
         for step in steps:
+            import pudb; pudb.set_trace()
+
+            # Prompt the user to continue or skip this step
+            print(f"\nProcessing step: {step}")
+
+
+            # user_input = input("Do you want to process this step? (y to continue, s to skip): ").strip().lower()
+            # if user_input == "s":
+            #     print("Skipping this step as per user request.")
+                
+            #     continue
+
             if "cli_output_example" in step:
                 # Generate a decipher_id from the step key (e.g., "step 1" -> "step_1_decipher")
                 step_key = list(step.keys())[0]  # Get the first key (e.g., "step 1")
                 step["description_key"] = step_key
                 decipher_id = f"{step_key.replace(' ', '_')}_decipher"
                 step["decipher_id"] = decipher_id
-                deciphers.append(step)
+                # decipher = self.create_decipher(step, test_folder_path)
+                # deciphers_map[decipher["decipher_id"]] = decipher
+
+            # TEMPORARY
+            # Save deciphers_map to a file for later loading/deserialization
+            # deciphers_map_path = os.path.join(test_folder_path, "deciphers_map.pkl")
+            # with open(deciphers_map_path, "wb") as f:
+            #     pickle.dump(deciphers_map, f)
+            # TEMPORARY
         
-        deciphers_map = {decipher["decipher_id"]: decipher for decipher in deciphers}
+            res = self.create_test_step(zcode_snippets, 
+                deciphers_map, 
+                step, 
+                test_file_path, 
+                test_file_content,
+                steps_description)
 
-        for step in deciphers:
-            
-            # Create decipher
-            decipher = self.create_decipher(step, test_folder_path)
-
-        # Update the implementation_guide file with the deciphers
-        # Create a map of decipher_id to updated decipher
-        updated_deciphers_map = {decipher["decipher_id"]: decipher for decipher in deciphers}
-        
-        # Update deciphers in the original steps while preserving other steps
-        for step in steps:
-            if "decipher_id" in step and step["decipher_id"] in updated_deciphers_map:
-                step.update(updated_deciphers_map[step["decipher_id"]])
-        
-        # Write back all steps to the file
-        with open(guide_file, "w") as f:
-            yaml.dump(steps, f)
-
-        # 2. create the test steps
-        # Filter steps to only include those with step_id
-        test_steps = [step for step in steps if "step_id" in step]
-
-        for step in test_steps:
-            step = self.create_test_step(zproject_context, zcode_snippets, deciphers_map, step, test_file_path, test_file_content)
-
+            steps_description.append(res["explanation"])
