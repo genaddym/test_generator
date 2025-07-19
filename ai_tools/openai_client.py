@@ -380,7 +380,6 @@ class OpenAIClient:
         with open(file_name, "w") as f:
             for message in messages:
                 f.write(f"{message['role']}: {message['content']}\n")
-        import pudb; pudb.set_trace()
 
     def _create_structured_prompt(self, 
                                  role: str,
@@ -629,24 +628,20 @@ class OpenAIClient:
         # Create test file from template
         test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
         
-        # Load existing deciphers_map if it exists, otherwise start with empty dict
-        import pudb; pudb.set_trace()
 
          # TEMPORARY
-        deciphers_map_path = os.path.join(test_folder_path, "deciphers_map.pkl")
-        if os.path.exists(deciphers_map_path):
-            print(f"Loading existing deciphers_map from {deciphers_map_path}")
-            with open(deciphers_map_path, "rb") as f:
-                deciphers_map = pickle.load(f)
-        else:
+        # deciphers_map_path = os.path.join(test_folder_path, "deciphers_map.pkl")
+        # if os.path.exists(deciphers_map_path):
+        #     print(f"Loading existing deciphers_map from {deciphers_map_path}")
+        #     with open(deciphers_map_path, "rb") as f:
+        #         deciphers_map = pickle.load(f)
+        # else:
         # TEMPORARY
-            deciphers_map = {}
+        deciphers_map = {}
         
         steps_description = []
 
         for step in steps:
-            import pudb; pudb.set_trace()
-
             # Prompt the user to continue or skip this step
             print(f"\nProcessing step: {step}")
 
@@ -663,8 +658,8 @@ class OpenAIClient:
                 step["description_key"] = step_key
                 decipher_id = f"{step_key.replace(' ', '_')}_decipher"
                 step["decipher_id"] = decipher_id
-                # decipher = self.create_decipher(step, test_folder_path)
-                # deciphers_map[decipher["decipher_id"]] = decipher
+                decipher = self.create_decipher(step, test_folder_path)
+                deciphers_map[decipher["decipher_id"]] = decipher
 
             # TEMPORARY
             # Save deciphers_map to a file for later loading/deserialization
@@ -673,11 +668,15 @@ class OpenAIClient:
             #     pickle.dump(deciphers_map, f)
             # TEMPORARY
         
+            # Refresh test_file_content with current file content before each step
+            with open(test_file_path, "r") as f:
+                current_test_file_content = f.read()
+            
             res = self.create_test_step(zcode_snippets, 
                 deciphers_map, 
                 step, 
                 test_file_path, 
-                test_file_content,
+                current_test_file_content,
                 steps_description)
 
             steps_description.append(res["explanation"])
