@@ -9,7 +9,7 @@ import subprocess
 import pickle
 
 OPENAI_MODEL = "gpt-4.1-mini"
-#OPENAI_MODEL = "gpt-4-turbo"
+
 
 MAX_ATTEMPTS = 7
 
@@ -135,6 +135,22 @@ class OpenAIClient:
         folder_name = self.sanitize_folder_name(cli_command)
         command_folder = os.path.join(test_folder_path, folder_name)
         os.makedirs(command_folder, exist_ok=True)
+
+        # Create pickle filename based on decipher_id for caching in the command folder
+        decipher_id = step.get("decipher_id", "unknown_decipher")
+        decipher_pickle_file = os.path.join(command_folder, f"{decipher_id}.pkl")
+        
+        # Check if cached decipher exists in the command folder
+        if os.path.exists(decipher_pickle_file):
+            print(f"Loading cached decipher from {decipher_pickle_file}")
+            try:
+                with open(decipher_pickle_file, "rb") as f:
+                    cached_step = pickle.load(f)
+                print(f"Successfully loaded cached decipher: {cached_step.get('class_name', 'Unknown')}")
+                return cached_step
+            except Exception as e:
+                print(f"Failed to load cached decipher from {decipher_pickle_file}: {e}")
+                print("Proceeding with fresh decipher generation...")
 
         class_name = ''.join(word.capitalize() for word in folder_name.split('_'))
         step["class_name"] = f"{class_name}Decipher"
@@ -275,6 +291,15 @@ class OpenAIClient:
                         except json.JSONDecodeError as e:
                             print(f"Warning: Could not parse JSON example from unit test for {step['command_id']}: {str(e)}")
                             print(f"Captured JSON: {json_example_match.group(1)}")
+                    
+                    # Cache the successfully created decipher for future use
+                    try:
+                        with open(decipher_pickle_file, "wb") as f:
+                            pickle.dump(step, f)
+                        print(f"Successfully cached decipher to {decipher_pickle_file}")
+                    except Exception as e:
+                        print(f"Warning: Failed to cache decipher to {decipher_pickle_file}: {e}")
+                    
                     return step
                 else:
                     print(f"\nTest {unit_test_file} FAILED")
@@ -490,7 +515,13 @@ class OpenAIClient:
                 "  • MUST use the expected output format to validate results",
                 "IMPORTANT: Extract step logic into separate method if possible",
                 "IMPORTANT: Add logger at beginning of test step with step number",
-                "IMPORTANT: Generate complete updated test file content"
+                "IMPORTANT: Generate complete updated test file content",
+                "IMPORTANT: Define constants instead of hardcoded values (e.g., WAIT_TIME_SECONDS = 60)",
+                "IMPORTANT: Use meaningful constant names in UPPER_CASE format",
+                "IMPORTANT: Place constants at class level or module level as appropriate",
+                "CRITICAL: DO NOT include any markdown formatting or code blocks",
+                "CRITICAL: DO NOT use backticks (```) or language tags like ```python",
+                "CRITICAL: Return only raw Python code without any markdown delimiters"
             ],
             context={
                 "code_snippets": zcode_snippets,
