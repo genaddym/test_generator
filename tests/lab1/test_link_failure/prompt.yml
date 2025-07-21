@@ -1,5 +1,5 @@
 - step 1: Retrieve the devices for role a and role z for vendor drivenets. The roles are provided as --role_a and --role_z pytest parameters by the user. Devices are provided as --device_a and --device_z pytest parameters.
-- step 2: on device a, execute the cli command "show isis neighbors | inc role_z". Extract the bundle id from the first line which is the bundle id of the device z name.
+- step 2: on device a, execute the cli command "show isis neighbors | inc <role_z_value>", where <role_z_value> should be replaced with the actual value of the --role_z parameter. Extract the bundle id from the first line which is the bundle id of the device z name.
   cli_output_example: |
     pcr01.site10.cran1             bundle-178              L2     Up            1M6d18h45m57s        28        point-to-point  
     pcr02.site10.cran1             bundle-223              L2     Up            1M3w14h29m41s        23        point-to-point  

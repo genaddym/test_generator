@@ -8,7 +8,7 @@ import json
 import subprocess
 import pickle
 
-OPENAI_MODEL = "gpt-4.1-mini"
+OPENAI_MODEL = "gpt-4.1"
 
 
 MAX_ATTEMPTS = 7
@@ -172,7 +172,7 @@ class OpenAIClient:
                 "MUST use pytest framework (not unittest)",
                 "MUST use underscores for JSON keys (not hyphens): 'command_output' not 'command-output'",
                 "MUST define expected_output as single line variable with valid JSON string",
-                "MUST use relative imports in unit test: 'from .decipher import {class_name}Decipher'",
+                "MUST use relative imports in unit test: 'from decipher import {class_name}Decipher'",
                 "MUST import base class: 'from tests.base.decipher import Decipher'",
                 "MUST include CLI command in class docstring",
                 "MUST write directly executable Python code (no markdown/backticks)",
@@ -352,7 +352,7 @@ class OpenAIClient:
                     - The class docstring must include the CLI command being parsed
                     - The code must be production-ready and follow Python best practices
                     - In the unit test, define the expected output as a single line variable named 'expected_output' with a valid JSON string
-                    - In the unit test file, use relative imports for importing the decipher class
+                    - In the unit test file, use relative imports for importing the decipher class, without using the . before decipher. Example: 'from decipher import ShowIsisNeighborsIncRoleZDecipher'. Using . before decipher will cause ImportError.
                     - In the decipher file, import the base class using 'from tests.base.decipher import Decipher'
                     
                     CLI Output Example:
