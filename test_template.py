@@ -29,7 +29,12 @@ class TestTemplate:
     """
 
     def test_template(
-        self, device_manager: DeviceManager, topology_manager: TopologyManager
+        self, 
+        device_manager: DeviceManager, # pylint: disable=unused-argument
+        topology_manager: TopologyManager, # pylint: disable=unused-argument
+        request, # pylint: disable=unused-argument
+        traffic_manager, # pylint: disable=unused-argument
+        reset_ixia  # pylint: disable=unused-argument
     ):
         """
 
