@@ -33,8 +33,10 @@ disable=
     W1203, # logging-fstring-interpolation
     W0707, # raise-missing-from
     W0703, # broad-except
-
-
+    C0304, # missing-final-newline
+    C0112, # empty-docstring
+    W1201, # logging-not-lazy
+    C0209, # consider-using-f-string
 
 [FORMAT]
 # Maximum number of characters on a single line (we disable this check above, but keep it here for reference)

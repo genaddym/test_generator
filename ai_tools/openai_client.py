@@ -96,6 +96,13 @@ class OpenAIClient:
         
         return result.returncode, result.stdout + result.stderr
 
+    def _create_messages(self, system_content: str, user_content: str) -> list[dict]:
+        """Create properly typed messages for OpenAI chat completion."""
+        return [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content}
+        ]
+
     def create_decipher(self, step: dict, test_folder_path: str) -> dict:
         prompt = self._create_structured_prompt(
             role="Python network automation expert specializing in CLI command parsing and testing",
@@ -110,10 +117,10 @@ class OpenAIClient:
             }
         )
 
-        messages = [
-            {"role": "system", "content": "You are a Python network automation expert specializing in CLI command parsing and testing."},
-            {"role": "user", "content": prompt}
-        ]
+        messages = self._create_messages(
+            "You are a Python network automation expert specializing in CLI command parsing and testing.",
+            prompt
+        )
 
         print(f"Sending prompt to OpenAI to extract CLI command...")
         self._save_messages(messages)
@@ -732,6 +739,100 @@ class OpenAIClient:
             print(f"Error parsing analysis response: {str(e)}")
             return False, 0.0, ["Failed to analyze prompt quality"]
 
+    def run_pylint(self, file_path: str) -> Tuple[int, str]:
+        """
+        Run pylint on a file and capture its output.
+        
+        Args:
+            file_path (str): Path to the file to check
+            
+        Returns:
+            Tuple[int, str]: (exit_code, output)
+        """
+        # Run pylint in a subprocess
+        result = subprocess.run(
+            ["pylint", str(file_path)],
+            capture_output=True,
+            text=True,
+            env=os.environ.copy()
+        )
+        
+        return result.returncode, result.stdout + result.stderr
+
+    def fix_pylint_issues(self, file_path: str, pylint_output: str, current_content: str) -> str:
+        """
+        Use OpenAI to fix pylint issues in the file.
+        
+        Args:
+            file_path (str): Path to the file being fixed
+            pylint_output (str): Output from pylint containing issues
+            current_content (str): Current content of the file
+            
+        Returns:
+            str: Fixed file content
+        """
+        prompt = self._create_structured_prompt(
+            role="Python code quality expert",
+            task="Fix pylint issues in the provided Python code while maintaining its functionality.",
+            requirements=[
+                "MUST fix all pylint issues reported",
+                "MUST maintain exact functionality",
+                "MUST keep all imports and dependencies",
+                "MUST follow PEP 8 style guide",
+                "MUST return complete fixed file content",
+                "MUST NOT include any markdown formatting",
+                "MUST NOT use backticks or code blocks"
+            ],
+            context={
+                "current_code": current_content,
+                "pylint_issues": pylint_output,
+                "file_path": file_path
+            },
+            output_format="""
+            # fixed_code
+            [Complete fixed file content]
+
+            # explanation
+            [Explanation of fixes made]
+            """
+        )
+
+        messages = [
+            {"role": "system", "content": "You are a Python code quality expert. You must fix pylint issues while maintaining code functionality."},
+            {"role": "user", "content": prompt}
+        ]
+
+        print("\nRequesting OpenAI to fix pylint issues...")
+        self._save_messages(messages)
+        response = self.client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            temperature=0.1
+        )
+
+        content = response.choices[0].message.content
+        if not content:
+            return current_content
+
+        # Extract fixed code
+        parts = content.split("# fixed_code")
+        if len(parts) != 2:
+            return current_content
+
+        code_part = parts[1].split("# explanation")
+        if len(code_part) != 2:
+            return current_content
+
+        fixed_code = code_part[0].strip()
+        explanation = code_part[1].strip()
+
+        print("\nCode Fix Explanation:")
+        print("=" * 80)
+        print(explanation)
+        print("=" * 80)
+
+        return fixed_code
+
     def generate_test(self, test_name: str):
         test_folder_path = os.path.join("tests", "lab1", test_name)
 
@@ -747,9 +848,9 @@ class OpenAIClient:
         if not can_proceed:
             print("\nTest generation halted due to insufficient prompt quality.")
             print("Please address the identified issues and try again.")
-            return
+            # return
             
-        return    
+   
         # Create test file from template
         test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
         
@@ -778,7 +879,6 @@ class OpenAIClient:
             #     continue
 
             if "cli_output_example" in step:
-                # Generate a decipher_id from the step key (e.g., "step 1" -> "step_1_decipher")
                 step_key = list(step.keys())[0]  # Get the first key (e.g., "step 1")
                 step["description_key"] = step_key
                 decipher_id = f"{step_key.replace(' ', '_')}_decipher"
@@ -805,3 +905,32 @@ class OpenAIClient:
                 steps_description)
 
             steps_description.append(res["explanation"])
+
+        # Run pylint validation and fix issues
+        print("\nValidating test file with pylint...")
+        attempt = 0
+        while attempt < MAX_ATTEMPTS:
+            exit_code, pylint_output = self.run_pylint(test_file_path)
+            
+            if exit_code == 0:
+                print("Pylint validation passed!")
+                break
+                
+            print(f"\nPylint found issues (attempt {attempt + 1} of {MAX_ATTEMPTS}):")
+            print(pylint_output)
+            
+            # Read current content
+            with open(test_file_path, "r") as f:
+                current_content = f.read()
+            
+            # Try to fix issues
+            fixed_content = self.fix_pylint_issues(test_file_path, pylint_output, current_content)
+            
+            # Write fixed content
+            with open(test_file_path, "w") as f:
+                f.write(fixed_content)
+            
+            attempt += 1
+            
+        if attempt == MAX_ATTEMPTS:
+            print("\nWarning: Could not fix all pylint issues after maximum attempts.")
