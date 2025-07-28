@@ -646,6 +646,92 @@ class OpenAIClient:
         print(f"Failed to generate test step after {MAX_ATTEMPTS} attempts")
         return step
 
+    def analyze_test_prompt(self, prompt_content: dict) -> tuple[bool, float, list[str]]:
+        """
+        Analyze the test prompt quality and determine if it's sufficient for test generation by AI (important: by AI, not by human).
+        Disregard the parsers logic and the data extraction process. The parsing logic will be furnished at a later stage.
+        
+        Args:
+            prompt_content (dict): The YAML content of the prompt file
+            
+        Returns:
+            tuple[bool, float, list[str]]: (can_proceed, quality_score, issues)
+            - can_proceed: Whether the prompt quality is sufficient to proceed
+            - quality_score: Score from 0-10 rating prompt quality
+            - issues: List of identified issues or unclear areas
+        """
+        QUALITY_THRESHOLD = 7.0  # Minimum score to proceed with test generation
+        
+        prompt = self._create_structured_prompt(
+            role="Test prompt quality analyst",
+            task="Analyze the provided test prompt and evaluate its quality for automated test generation.",
+            requirements=[
+                "MUST rate prompt quality on scale 0-10 (10 being perfect)",
+                "MUST identify any unclear or ambiguous parts",
+                "MUST check if steps are logically ordered",
+                "MUST verify each step has clear success criteria",
+                "MUST check if required test data/configuration is specified",
+                "MUST validate CLI command examples are complete and correct",
+                "MUST ensure expected outputs are clearly defined",
+                "MUST check for missing dependencies between steps"
+            ],
+            context={
+                "prompt_content": yaml.dump(prompt_content, default_flow_style=False)
+            },
+            output_format="""
+            {
+                "quality_score": <float 0-10>,
+                "can_proceed": <boolean>,
+                "issues": [
+                    "<issue_1>",
+                    "<issue_2>",
+                    ...
+                ],
+                "explanation": "<detailed analysis>"
+            }
+            """
+        )
+
+        messages = [
+            {"role": "system", "content": "You are a test prompt quality analyst. You must evaluate test prompts for clarity, completeness, and feasibility for automated test generation."},
+            {"role": "user", "content": prompt}
+        ]
+
+        print("\nAnalyzing test prompt quality...")
+        self._save_messages(messages)
+        response = self.client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            temperature=0.1
+        )
+
+        try:
+            content = response.choices[0].message.content
+            if not content:
+                print("Error: Received empty response from OpenAI")
+                return False, 0.0, ["Failed to analyze prompt quality - empty response"]
+                
+            analysis = json.loads(content)
+            quality_score = float(analysis["quality_score"])
+            issues = analysis["issues"]
+            
+            print(f"\nPrompt Quality Analysis:")
+            print("=" * 80)
+            print(f"Quality Score: {quality_score}/10")
+            print(f"Can Proceed: {quality_score >= QUALITY_THRESHOLD}")
+            if issues:
+                print("\nIdentified Issues:")
+                for i, issue in enumerate(issues, 1):
+                    print(f"{i}. {issue}")
+            print(f"\nAnalysis: {analysis['explanation']}")
+            print("=" * 80)
+            
+            return quality_score >= QUALITY_THRESHOLD, quality_score, issues
+            
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error parsing analysis response: {str(e)}")
+            return False, 0.0, ["Failed to analyze prompt quality"]
+
     def generate_test(self, test_name: str):
         test_folder_path = os.path.join("tests", "lab1", test_name)
 
@@ -655,7 +741,15 @@ class OpenAIClient:
         guide_file = os.path.join(test_folder_path, "prompt.yml")
         with open(guide_file, "r") as f:
             steps = yaml.safe_load(f)
-
+            
+        # Analyze prompt quality before proceeding
+        can_proceed, quality_score, issues = self.analyze_test_prompt(steps)
+        if not can_proceed:
+            print("\nTest generation halted due to insufficient prompt quality.")
+            print("Please address the identified issues and try again.")
+            return
+            
+        return    
         # Create test file from template
         test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
         
