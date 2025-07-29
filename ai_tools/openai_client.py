@@ -7,6 +7,7 @@ import re
 import json
 import subprocess
 import pickle
+import ast
 
 OPENAI_MODEL = "gpt-4.1"
 
@@ -304,14 +305,41 @@ class OpenAIClient:
                         f.write(decipher_content)
                     # TEMPORARY
 
-                    json_example_match = re.search(r'expected_output\s*=\s*({[^{}]*(?:{[^{}]*}[^{}]*)*})', test_content)
-                    if json_example_match:
-                        try:
-                            json_example = json.loads(json_example_match.group(1))
-                            step["json_example"] = json_example
-                        except json.JSONDecodeError as e:
-                            print(f"Warning: Could not parse JSON example from unit test for {step['command_id']}: {str(e)}")
-                            print(f"Captured JSON: {json_example_match.group(1)}")
+                    # Extract expected_output using ast to safely parse Python assignments
+                    try:
+                        # Parse the entire file
+                        tree = ast.parse(test_content)
+                        
+                        # Look for assignment to expected_output
+                        for node in ast.walk(tree):
+                            if isinstance(node, ast.Assign):
+                                for target in node.targets:
+                                    if isinstance(target, ast.Name) and target.id == 'expected_output':
+                                        # Get the value being assigned
+                                        if isinstance(node.value, ast.Str):
+                                            # If it's a string literal, parse it as JSON
+                                            json_str = node.value.s
+                                        elif isinstance(node.value, ast.Dict):
+                                            # If it's a dictionary literal, convert to string
+                                            json_str = ast.literal_eval(node.value)
+                                        else:
+                                            continue
+                                        
+                                        try:
+                                            if isinstance(json_str, dict):
+                                                json_example = json_str
+                                            else:
+                                                json_example = json.loads(json_str)
+                                            step["json_example"] = json_example
+                                            break
+                                        except json.JSONDecodeError as e:
+                                            print(f"Warning: Could not parse JSON from expected_output in {test_file}: {str(e)}")
+                                            print(f"Content: {json_str}")
+                                            
+                    except SyntaxError as e:
+                        print(f"Warning: Could not parse Python file {test_file}: {str(e)}")
+                    except Exception as e:
+                        print(f"Warning: Error processing expected_output from {test_file}: {str(e)}")
                     
                     # Cache the successfully created decipher for future use
                     try:

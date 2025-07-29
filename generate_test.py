@@ -11,7 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TEST_NAME = "test_link_failure"
+TEST_NAME = "conditional_advertisement_ibone"
 
 def main():
     try:
