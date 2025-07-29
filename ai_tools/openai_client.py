@@ -40,8 +40,8 @@ class OpenAIClient:
         """
         # Remove or replace illegal characters for folder names
         # Illegal characters: < > : " | ? * \ / and control characters
-        # Also remove brackets, parentheses, and other problematic characters
-        illegal_chars = r'[<>:"|?*\\/#\[\](){}@!$%^&+=;,\'`~]'
+        # Also remove brackets, parentheses, hyphens, and other problematic characters
+        illegal_chars = r'[<>:"|?*\\/#\[\](){}@!$%^&+=;,\'`~-]'
         
         # Replace illegal characters with underscores
         sanitized = re.sub(illegal_chars, '_', name)
@@ -290,6 +290,20 @@ class OpenAIClient:
                     # Read the test file to extract JSON example
                     with open(unit_test_file, 'r') as f:
                         test_content = f.read()
+
+                    # TEMPORARY: Replace the import statement in the decipher file
+                    with open(decipher_file, 'r') as f:
+                        decipher_content = f.read()
+                    
+                    decipher_content = decipher_content.replace(
+                        "from tests.base.decipher import Decipher",
+                        "from orbital.testing.helpers.deciphers.decipher_base import Decipher"
+                    )
+                    
+                    with open(decipher_file, 'w') as f:
+                        f.write(decipher_content)
+                    # TEMPORARY
+
                     json_example_match = re.search(r'expected_output\s*=\s*({[^{}]*(?:{[^{}]*}[^{}]*)*})', test_content)
                     if json_example_match:
                         try:
@@ -529,6 +543,7 @@ class OpenAIClient:
                 "CRITICAL: DO NOT include any markdown formatting or code blocks",
                 "CRITICAL: DO NOT use backticks (```) or language tags like ```python",
                 "CRITICAL: Return only raw Python code without any markdown delimiters"
+                "CRITICAL: DO NOT remove any unused imports, constants, variables, or methods - they will be used in later steps"
             ],
             context={
                 "code_snippets": zcode_snippets,
@@ -844,10 +859,10 @@ class OpenAIClient:
             steps = yaml.safe_load(f)
             
         # Analyze prompt quality before proceeding
-        can_proceed, quality_score, issues = self.analyze_test_prompt(steps)
-        if not can_proceed:
-            print("\nTest generation halted due to insufficient prompt quality.")
-            print("Please address the identified issues and try again.")
+        # can_proceed, quality_score, issues = self.analyze_test_prompt(steps)
+        # if not can_proceed:
+        #     print("\nTest generation halted due to insufficient prompt quality.")
+        #     print("Please address the identified issues and try again.")
             # return
             
    
@@ -934,3 +949,5 @@ class OpenAIClient:
             
         if attempt == MAX_ATTEMPTS:
             print("\nWarning: Could not fix all pylint issues after maximum attempts.")
+
+        
