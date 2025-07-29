@@ -553,6 +553,18 @@ class OpenAIClient:
                                 step: dict,
                                 decipher_info: str) -> str:
         """Create a structured prompt for test step implementation."""
+        context = {
+            "code_snippets": zcode_snippets,
+            "current_test_file": test_file_content,
+            "previous_steps": previous_steps_description,
+            "step_details": yaml.dump(step, default_flow_style=False),
+            "decipher_info": decipher_info
+        }
+        
+        # Add clarifications if available
+        if 'clarifications' in step:
+            context["clarifications"] = yaml.dump(step['clarifications'], default_flow_style=False)
+            
         return self._create_structured_prompt(
             role="Python network automation expert specializing in test automation",
             task="Implement a test step by updating the existing test file content. Add the implementation to the test method following the existing structure.",
@@ -575,13 +587,7 @@ class OpenAIClient:
                 "CRITICAL: Return only raw Python code without any markdown delimiters"
                 "CRITICAL: DO NOT remove any unused imports, constants, variables, or methods - they will be used in later steps"
             ],
-            context={
-                "code_snippets": zcode_snippets,
-                "current_test_file": test_file_content,
-                "previous_steps": previous_steps_description,
-                "step_details": yaml.dump(step, default_flow_style=False),
-                "decipher_info": decipher_info
-            },
+            context=context,
             output_format="""
 # new_file_content
 [Complete updated test file content]
@@ -620,6 +626,100 @@ class OpenAIClient:
         
         return new_file_content, explanation, True
 
+    def _analyze_test_step_prompt(self, step: dict, decipher_info: str) -> tuple[bool, list[dict], str]:
+        """
+        Analyze if the test step prompt is clear enough for code generation.
+        
+        Args:
+            step: Step definition to analyze
+            decipher_info: Information about the decipher if available
+            
+        Returns:
+            tuple[bool, list[dict], str]: (is_clear, clarification_questions, analysis)
+            - is_clear: Whether the prompt is clear enough to proceed
+            - clarification_questions: List of questions with suggested answers if clarity is needed
+            - analysis: Detailed analysis of the prompt clarity
+        """
+        prompt = self._create_structured_prompt(
+            role="Test step clarity analyst",
+            task="Analyze if the provided test step description is clear enough for automated code generation.",
+            requirements=[
+                "MUST determine if the step description is clear enough for code generation",
+                "MUST identify any ambiguous or missing information",
+                "MUST generate specific clarification questions if needed",
+                "MUST provide suggested answer options for each question",
+                "MUST consider both functional and technical aspects",
+                "MUST validate if success criteria are clear",
+                "MUST check if all required data/configuration is specified",
+                "MUST ensure dependencies and prerequisites are clear"
+            ],
+            context={
+                "step_details": yaml.dump(step, default_flow_style=False),
+                "decipher_info": decipher_info
+            },
+            output_format="""
+            {
+                "is_clear": <boolean>,
+                "clarification_questions": [
+                    {
+                        "question": "<question text>",
+                        "suggested_answers": [
+                            "<option 1>",
+                            "<option 2>",
+                            ...
+                        ],
+                        "explanation": "<why this needs clarification>"
+                    },
+                    ...
+                ],
+                "analysis": "<detailed analysis of the prompt clarity>"
+            }
+            """
+        )
+
+        messages = [
+            {"role": "system", "content": "You are a test step clarity analyst. You must evaluate if test step descriptions are clear enough for automated code generation."},
+            {"role": "user", "content": prompt}
+        ]
+
+        print("\nAnalyzing test step clarity...")
+        self._save_messages(messages)
+        response = self.client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            temperature=0.1
+        )
+
+        try:
+            content = response.choices[0].message.content
+            if not content:
+                return False, [], "Failed to analyze step clarity - empty response"
+                
+            analysis = json.loads(content)
+            is_clear = analysis["is_clear"]
+            questions = analysis["clarification_questions"]
+            detailed_analysis = analysis["analysis"]
+            
+            print(f"\nStep Clarity Analysis:")
+            print("=" * 80)
+            print(f"Clear enough to proceed: {is_clear}")
+            if not is_clear and questions:
+                print("\nClarification needed:")
+                for i, q in enumerate(questions, 1):
+                    print(f"\nQuestion {i}: {q['question']}")
+                    print("Suggested answers:")
+                    for j, ans in enumerate(q['suggested_answers'], 1):
+                        print(f"  {j}. {ans}")
+                    print(f"Explanation: {q['explanation']}")
+            print(f"\nAnalysis: {detailed_analysis}")
+            print("=" * 80)
+            
+            return is_clear, questions, detailed_analysis
+            
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error parsing analysis response: {str(e)}")
+            return False, [], "Failed to analyze step clarity"
+
     def create_test_step(self, 
                         zcode_snippets: str, 
                         deciphers_map: dict, 
@@ -643,7 +743,45 @@ class OpenAIClient:
         """
         # Extract decipher information
         decipher_info, cli_command, decipher_class_name = self._get_decipher_info(step, deciphers_map)
+
+        import pudb; pudb.set_trace()
         
+        # Analyze step clarity
+        is_clear, questions, analysis = self._analyze_test_step_prompt(step, decipher_info)
+        
+        # If clarity issues found, get user clarification
+        if not is_clear and questions:
+            print("\nSome aspects of the test step need clarification.")
+            print("Please provide clarification by either:")
+            print("1. Entering the number of a suggested answer")
+            print("2. Providing your own clarification text\n")
+            
+            clarifications = {}
+            for i, q in enumerate(questions, 1):
+                while True:
+                    print(f"\nQuestion {i}: {q['question']}")
+                    print("Suggested answers:")
+                    for j, ans in enumerate(q['suggested_answers'], 1):
+                        print(f"  {j}. {ans}")
+                    user_input = input("\nYour clarification (enter answer number or free text): ").strip()
+                    
+                    # Try to interpret as answer number
+                    try:
+                        ans_num = int(user_input)
+                        if 1 <= ans_num <= len(q['suggested_answers']):
+                            clarifications[q['question']] = q['suggested_answers'][ans_num - 1]
+                            break
+                    except ValueError:
+                        # User provided free text
+                        clarifications[q['question']] = user_input
+                        break
+                    
+                    print("Invalid input. Please try again.")
+            
+            # Update step with clarifications
+            step['clarifications'] = clarifications
+            print("\nThank you for the clarifications. Proceeding with test generation...")
+
         # Create structured prompt
         prompt = self._create_test_step_prompt(
             zcode_snippets, test_file_content, previous_steps_description, step, decipher_info
