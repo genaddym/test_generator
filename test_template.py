@@ -8,6 +8,7 @@ import pytest
 from orbital.testing.device_manager import DeviceManager
 from orbital.testing.topology.topology_manager import TopologyManager
 from orbital.testing.common.vendors import Vendors
+from orbital.testing.common.roles import Roles
 
 from orbital.testing.topology.topology_validators.topology_validation_types import (
     TopologyValidationType,
@@ -29,7 +30,7 @@ class TestTemplate:
     """
 
     def test_template(
-        self, 
+        self,
         device_manager: DeviceManager, # pylint: disable=unused-argument
         topology_manager: TopologyManager, # pylint: disable=unused-argument
         request, # pylint: disable=unused-argument

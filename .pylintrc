@@ -37,6 +37,7 @@ disable=
     C0112, # empty-docstring
     W1201, # logging-not-lazy
     C0209, # consider-using-f-string
+    C0303, # trailing-whitespace
 
 [FORMAT]
 # Maximum number of characters on a single line (we disable this check above, but keep it here for reference)
