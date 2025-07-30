@@ -11,7 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TEST_NAME = "conditional_advertisement_ibone"
+TEST_NAME = "test_evpn_cin_rr_server_validation_test"
 
 def main():
     try:

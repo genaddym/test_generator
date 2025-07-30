@@ -626,13 +626,14 @@ class OpenAIClient:
         
         return new_file_content, explanation, True
 
-    def _analyze_test_step_prompt(self, step: dict, decipher_info: str) -> tuple[bool, list[dict], str]:
+    def _analyze_test_step_prompt(self, step: dict, test_file_content: str, previous_steps_description: list[str]) -> tuple[bool, list[dict], str]:
         """
         Analyze if the test step prompt is clear enough for code generation.
         
         Args:
             step: Step definition to analyze
-            decipher_info: Information about the decipher if available
+            test_file_content: Current content of the test file
+            previous_steps_description: List of previous step descriptions
             
         Returns:
             tuple[bool, list[dict], str]: (is_clear, clarification_questions, analysis)
@@ -651,11 +652,14 @@ class OpenAIClient:
                 "MUST consider both functional and technical aspects",
                 "MUST validate if success criteria are clear",
                 "MUST check if all required data/configuration is specified",
-                "MUST ensure dependencies and prerequisites are clear"
+                "MUST ensure dependencies and prerequisites are clear",
+                "MUST analyze how this step fits with previous steps",
+                "MUST verify the step aligns with existing test file structure"
             ],
             context={
                 "step_details": yaml.dump(step, default_flow_style=False),
-                "decipher_info": decipher_info
+                "current_test_file": test_file_content,
+                "previous_steps": previous_steps_description
             },
             output_format="""
             {
@@ -741,13 +745,16 @@ class OpenAIClient:
         Returns:
             dict: Updated step with test_file_content and explanation
         """
-        # Extract decipher information
-        decipher_info, cli_command, decipher_class_name = self._get_decipher_info(step, deciphers_map)
+        # Print step description for clarity
+        print("\nAnalyzing test step:")
+        print("=" * 80)
+        print(yaml.dump(step, default_flow_style=False))
+        print("=" * 80)
 
         import pudb; pudb.set_trace()
-        
+
         # Analyze step clarity
-        is_clear, questions, analysis = self._analyze_test_step_prompt(step, decipher_info)
+        is_clear, questions, analysis = self._analyze_test_step_prompt(step, test_file_content, previous_steps_description)
         
         # If clarity issues found, get user clarification
         if not is_clear and questions:
@@ -781,6 +788,9 @@ class OpenAIClient:
             # Update step with clarifications
             step['clarifications'] = clarifications
             print("\nThank you for the clarifications. Proceeding with test generation...")
+
+        # Extract decipher information
+        decipher_info, cli_command, decipher_class_name = self._get_decipher_info(step, deciphers_map)
 
         # Create structured prompt
         prompt = self._create_test_step_prompt(
