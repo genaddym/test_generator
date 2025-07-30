@@ -456,6 +456,8 @@ class OpenAIClient:
         with open(file_name, "w") as f:
             for message in messages:
                 f.write(f"{message['role']}: {message['content']}\n")
+        
+        input("Prompt saved. Press Enter to continue after reviewing the saved messages...")
 
     def _create_structured_prompt(self, 
                                  role: str,
@@ -643,18 +645,21 @@ class OpenAIClient:
         """
         prompt = self._create_structured_prompt(
             role="Test step clarity analyst",
-            task="Analyze if the provided test step description is clear enough for automated code generation.",
+            task="""
+            CLI Commands: If a test step includes a CLI command, the command itself must be explicitly specified, along with an example of its expected output. This output example is crucial for the subsequent generation of a decipher.
+            Decipher Generation: For steps containing CLI commands, the step generation logic will automatically create a decipher (parser). Deciphers convert string text from CLI responses into structured Python objects, with each decipher implementing specific parsing logic for a particular type of CLI output.
+            Information Extraction: It should be clear to the AI what information needs to be extracted by the decipher. If this isn't clear from the step prompt, the AI should ask the user for clarification.
+            Previous Steps/Data: If a step depends on previous steps or data, refer to the previous_steps section for relevant information.
+            Previous Deciphers: If a step depends on information from previous deciphers, refer to the deciphers_map section to locate the required information."
+            """,
             requirements=[
                 "MUST determine if the step description is clear enough for code generation",
-                "MUST identify any ambiguous or missing information",
+                "MUST identify any missing information",
                 "MUST generate specific clarification questions if needed",
                 "MUST provide suggested answer options for each question",
                 "MUST consider both functional and technical aspects",
-                "MUST validate if success criteria are clear",
-                "MUST check if all required data/configuration is specified",
-                "MUST ensure dependencies and prerequisites are clear",
                 "MUST analyze how this step fits with previous steps",
-                "MUST verify the step aligns with existing test file structure"
+                "MUST verify the step code can be applied to the test file structure"
             ],
             context={
                 "step_details": yaml.dump(step, default_flow_style=False),
