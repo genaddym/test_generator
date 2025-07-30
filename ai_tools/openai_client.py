@@ -11,8 +11,8 @@ import pickle
 import ast
 import copy
 
-# OPENAI_MODEL = "gpt-4.1"
-OPENAI_MODEL = "gpt-4.1-mini"
+OPENAI_MODEL = "gpt-4.1"
+
 
 MAX_ATTEMPTS = 7
 
@@ -337,13 +337,13 @@ class OpenAIClient:
                                             step["json_example"] = json_example
                                             break
                                         except json.JSONDecodeError as e:
-                                            print(f"Warning: Could not parse JSON from expected_output in {test_file}: {str(e)}")
+                                            print(f"Warning: Could not parse JSON from expected_output in {unit_test_file}: {str(e)}")
                                             print(f"Content: {json_str}")
                                             
                     except SyntaxError as e:
-                        print(f"Warning: Could not parse Python file {test_file}: {str(e)}")
+                        print(f"Warning: Could not parse Python file {unit_test_file}: {str(e)}")
                     except Exception as e:
-                        print(f"Warning: Error processing expected_output from {test_file}: {str(e)}")
+                        print(f"Warning: Error processing expected_output from {unit_test_file}: {str(e)}")
                     
                     # Cache the successfully created decipher for future use
                     try:
@@ -630,108 +630,7 @@ class OpenAIClient:
         
         return new_file_content, explanation, True
 
-    def _analyze_test_step_prompt(self, step: dict, test_file_content: str, previous_steps_description: list[str], deciphers_map: dict) -> tuple[bool, list[dict], str]:
-        """
-        Analyze if the test step prompt is clear enough for code generation.
-        
-        Args:
-            step: Step definition to analyze
-            test_file_content: Current content of the test file
-            previous_steps_description: List of previous step descriptions
-            deciphers_map: Dictionary mapping step numbers to decipher information
-            
-        Returns:
-            tuple[bool, list[dict], str]: (is_clear, clarification_questions, analysis)
-            - is_clear: Whether the prompt is clear enough to proceed
-            - clarification_questions: List of questions with suggested answers if clarity is needed
-            - analysis: Detailed analysis of the prompt clarity
-        """
-        prompt = self._create_structured_prompt(
-            role="Test step clarity analyst",
-            task="""
-            CLI Commands: If a test step includes a CLI command, the command itself must be explicitly specified, along with an example of its expected output. This output example is crucial for the subsequent generation of a decipher.
-            Decipher Generation: For steps containing CLI commands, the step generation logic will automatically create a decipher (parser). Deciphers convert string text from CLI responses into structured Python objects, with each decipher implementing specific parsing logic for a particular type of CLI output.
-            Information Extraction: It should be clear to the AI what information needs to be extracted by the decipher. If this isn't clear from the step prompt, the AI should ask the user for clarification.
-            Previous Steps/Data: If a step depends on previous steps or data, refer to the previous_steps section for relevant information.
-            Previous Deciphers: If a step depends on information from previous deciphers, refer to the deciphers_map section to locate the required information."
-            """,
-            requirements=[
-                "MUST determine if the step description is clear enough for code generation",
-                "MUST identify any missing information",
-                "MUST generate specific clarification questions if needed",
-                "MUST provide suggested answer options for each question",
-                "MUST consider both functional and technical aspects",
-                "MUST analyze how this step fits with previous steps",
-                "MUST verify the step code can be applied to the test file structure"
-            ],
-            context={
-                "step_details": yaml.dump(step, default_flow_style=False),
-                "current_test_file": test_file_content,
-                "previous_steps": previous_steps_description,
-                "deciphers_map": yaml.dump(deciphers_map, default_flow_style=False)
-            },
-            output_format="""
-            {
-                "is_clear": <boolean>,
-                "clarification_questions": [
-                    {
-                        "question": "<question text>",
-                        "suggested_answers": [
-                            "<option 1>",
-                            "<option 2>",
-                            ...
-                        ],
-                        "explanation": "<why this needs clarification>"
-                    },
-                    ...
-                ],
-                "analysis": "<detailed analysis of the prompt clarity>"
-            }
-            """
-        )
 
-        messages = [
-            {"role": "system", "content": "You are a test step clarity analyst. You must evaluate if test step descriptions are clear enough for automated code generation."},
-            {"role": "user", "content": prompt}
-        ]
-
-        print("\nAnalyzing test step clarity...")
-        self._save_messages(messages)
-        response = self.client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=messages,
-            temperature=0.1
-        )
-
-        try:
-            content = response.choices[0].message.content
-            if not content:
-                return False, [], "Failed to analyze step clarity - empty response"
-                
-            analysis = json.loads(content)
-            is_clear = analysis["is_clear"]
-            questions = analysis["clarification_questions"]
-            detailed_analysis = analysis["analysis"]
-            
-            print(f"\nStep Clarity Analysis:")
-            print("=" * 80)
-            print(f"Clear enough to proceed: {is_clear}")
-            if not is_clear and questions:
-                print("\nClarification needed:")
-                for i, q in enumerate(questions, 1):
-                    print(f"\nQuestion {i}: {q['question']}")
-                    print("Suggested answers:")
-                    for j, ans in enumerate(q['suggested_answers'], 1):
-                        print(f"  {j}. {ans}")
-                    print(f"Explanation: {q['explanation']}")
-            print(f"\nAnalysis: {detailed_analysis}")
-            print("=" * 80)
-            
-            return is_clear, questions, detailed_analysis
-            
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"Error parsing analysis response: {str(e)}")
-            return False, [], "Failed to analyze step clarity"
 
     def create_test_step(self, 
                         zcode_snippets: str, 
@@ -757,46 +656,10 @@ class OpenAIClient:
             tuple[dict, dict]: (Updated step with test_file_content and explanation, updated deciphers_map)
         """
                 # Print step description for clarity
-        print("\nAnalyzing test step:")
+        print("\nProcessing test step:")
         print("=" * 80)
         print(yaml.dump(step, default_flow_style=False))
         print("=" * 80)
-
-        # Analyze step clarity
-        is_clear, questions, analysis = self._analyze_test_step_prompt(step, test_file_content, previous_steps_description, deciphers_map)
-        
-                # If clarity issues found, get user clarification
-        if not is_clear and questions:
-            print("\nSome aspects of the test step need clarification.")
-            print("Please provide clarification by either:")
-            print("1. Entering the number of a suggested answer")
-            print("2. Providing your own clarification text\n")
-            
-            clarifications = {}
-            for i, q in enumerate(questions, 1):
-                while True:
-                    print(f"\nQuestion {i}: {q['question']}")
-                    print("Suggested answers:")
-                    for j, ans in enumerate(q['suggested_answers'], 1):
-                        print(f"  {j}. {ans}")
-                    user_input = input("\nYour clarification (enter answer number or free text): ").strip()
-                    
-                    # Try to interpret as answer number
-                    try:
-                        ans_num = int(user_input)
-                        if 1 <= ans_num <= len(q['suggested_answers']):
-                            clarifications[q['question']] = q['suggested_answers'][ans_num - 1]
-                            break
-                    except ValueError:
-                        # User provided free text
-                        clarifications[q['question']] = user_input
-                        break
-                    
-                    print("Invalid input. Please try again.")
-            
-            # Update step with clarifications
-            step['clarifications'] = clarifications
-            print("\nThank you for the clarifications. Proceeding with test generation...")
 
 
         # Handle decipher creation if needed
@@ -867,33 +730,36 @@ class OpenAIClient:
         print(f"Failed to generate test step after {MAX_ATTEMPTS} attempts")
         return step, deciphers_map
 
-    def analyze_test_prompt(self, prompt_content: dict) -> tuple[bool, float, list[str]]:
+    def analyze_test_prompt(self, prompt_content: dict, test_folder_path: str) -> tuple[bool, dict]:
         """
-        Analyze the test prompt quality and determine if it's sufficient for test generation by AI (important: by AI, not by human).
-        Disregard the parsers logic and the data extraction process. The parsing logic will be furnished at a later stage.
+        Analyze the test prompt quality and gather necessary clarifications from the user.
         
         Args:
             prompt_content (dict): The YAML content of the prompt file
-            
+            test_folder_path (str): Path to the test folder where the prompt is located
+
         Returns:
-            tuple[bool, float, list[str]]: (can_proceed, quality_score, issues)
+            tuple[bool, dict]: (can_proceed, enriched_prompt)
             - can_proceed: Whether the prompt quality is sufficient to proceed
-            - quality_score: Score from 0-10 rating prompt quality
-            - issues: List of identified issues or unclear areas
+            - enriched_prompt: Original prompt with added clarifications
         """
-        QUALITY_THRESHOLD = 7.0  # Minimum score to proceed with test generation
+        QUALITY_THRESHOLD = 5.0  # Minimum score to proceed with test generation
         
         prompt = self._create_structured_prompt(
             role="Test prompt quality analyst",
-            task="Analyze the provided test prompt and evaluate its quality for automated test generation.",
+            task="""Analyze the test prompt and identify areas needing clarification for automated test generation.
+Analyze if the provided test description is clear enough for automated code generation. The test step can contain CLI command. Cli command should be specified. In case and the step contains cli command, it must contains the example of the cli output for that command.
+In case and the step contains cli command, further step generation logic will create a decipher for it.
+Deciphers (parsers) are responsible for converting string text from CLI responses into
+structured Python objects. Each decipher implements a specific parsing logic
+for a particular type of CLI output.
+It should be clear from the test prompt, what information should be extracted by decipher, according to the test needs.""",
             requirements=[
                 "MUST rate prompt quality on scale 0-10 (10 being perfect)",
-                "MUST identify any unclear or ambiguous parts",
+                "MUST analyze each step for clarity",
+                "MUST generate specific clarification questions for unclear aspects",
+                "MUST provide suggested answer options for each question",
                 "MUST check if steps are logically ordered",
-                "MUST verify each step has clear success criteria",
-                "MUST check if required test data/configuration is specified",
-                "MUST validate CLI command examples are complete and correct",
-                "MUST ensure expected outputs are clearly defined",
                 "MUST check for missing dependencies between steps"
             ],
             context={
@@ -903,7 +769,22 @@ class OpenAIClient:
             {
                 "quality_score": <float 0-10>,
                 "can_proceed": <boolean>,
-                "issues": [
+                "step_questions": {
+                    "<step_key>": [
+                        {
+                            "question": "<question text>",
+                            "suggested_answers": [
+                                "<option 1>",
+                                "<option 2>",
+                                ...
+                            ],
+                            "explanation": "<why this needs clarification>"
+                        },
+                        ...
+                    ],
+                    ...
+                },
+                "general_issues": [
                     "<issue_1>",
                     "<issue_2>",
                     ...
@@ -914,7 +795,7 @@ class OpenAIClient:
         )
 
         messages = [
-            {"role": "system", "content": "You are a test prompt quality analyst. You must evaluate test prompts for clarity, completeness, and feasibility for automated test generation."},
+            {"role": "system", "content": "You are a test prompt quality analyst. You must evaluate test prompts for clarity and identify areas needing clarification."},
             {"role": "user", "content": prompt}
         ]
 
@@ -930,28 +811,85 @@ class OpenAIClient:
             content = response.choices[0].message.content
             if not content:
                 print("Error: Received empty response from OpenAI")
-                return False, 0.0, ["Failed to analyze prompt quality - empty response"]
+                return False, prompt_content
                 
             analysis = json.loads(content)
             quality_score = float(analysis["quality_score"])
-            issues = analysis["issues"]
+            step_questions = analysis["step_questions"]
+            general_issues = analysis["general_issues"]
             
             print(f"\nPrompt Quality Analysis:")
             print("=" * 80)
             print(f"Quality Score: {quality_score}/10")
             print(f"Can Proceed: {quality_score >= QUALITY_THRESHOLD}")
-            if issues:
-                print("\nIdentified Issues:")
-                for i, issue in enumerate(issues, 1):
+
+            if general_issues:
+                print("\nGeneral Issues:")
+                for i, issue in enumerate(general_issues, 1):
                     print(f"{i}. {issue}")
+
             print(f"\nAnalysis: {analysis['explanation']}")
             print("=" * 80)
             
-            return quality_score >= QUALITY_THRESHOLD, quality_score, issues
+            # If quality is too low, don't proceed with clarifications
+            if quality_score < QUALITY_THRESHOLD:
+                print("\nTest generation halted due to insufficient prompt quality.")
+                print("Please address the general issues and try again.")
+                return False, prompt_content
+
+            # Process clarification questions for each step
+            enriched_prompt = prompt_content.copy()
+            if step_questions:
+                print("\nSome aspects of the test steps need clarification.")
+                print("Please provide clarification by either:")
+                print("1. Entering the number of a suggested answer")
+                print("2. Providing your own clarification text\n")
+
+                for step_key, questions in step_questions.items():
+                    if not questions:  # Skip steps without questions
+                        continue
+
+                    print(f"\nClarifications needed for {step_key}:")
+                    clarifications = {}
+
+                    for i, q in enumerate(questions, 1):
+                        while True:
+                            print(f"\nQuestion {i}: {q['question']}")
+                            print("Suggested answers:")
+                            for j, ans in enumerate(q['suggested_answers'], 1):
+                                print(f"  {j}. {ans}")
+                            user_input = input("\nYour clarification (enter answer number or free text): ").strip()
+
+                            # Try to interpret as answer number
+                            try:
+                                ans_num = int(user_input)
+                                if 1 <= ans_num <= len(q['suggested_answers']):
+                                    clarifications[q['question']] = q['suggested_answers'][ans_num - 1]
+                                    break
+                            except ValueError:
+                                # User provided free text
+                                clarifications[q['question']] = user_input
+                                break
+
+                            print("Invalid input. Please try again.")
+
+                    # Find the step in the prompt content and add clarifications
+                    for step in enriched_prompt:
+                        if step_key in step:
+                            step['clarifications'] = clarifications
+                            break
+
+                # Save enriched prompt to a file in the test folder
+                enriched_prompt_file = os.path.join(test_folder_path, "enriched_prompt.yml")
+                with open(enriched_prompt_file, "w") as f:
+                    yaml.dump(enriched_prompt, f, default_flow_style=False)
+                print(f"\nEnriched prompt saved to {enriched_prompt_file}")
+
+            return True, enriched_prompt
             
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Error parsing analysis response: {str(e)}")
-            return False, 0.0, ["Failed to analyze prompt quality"]
+            return False, prompt_content
 
     def run_pylint(self, file_path: str) -> Tuple[int, str]:
         """
@@ -1062,7 +1000,7 @@ class OpenAIClient:
                 example_prompt_content = f.read()
         if not example_prompt_content:
             raise RuntimeError("Example prompt format file not found or empty. Expected path : " + exmple_prompt.as_posix())
-        
+
         prompt = self._create_structured_prompt(
             role="You are an AI Agent that know to perform text-to-yaml conversion",
             task="Apply a set of rules to a given free text file to structure it into yaml. the yaml will represent a structured description of some networking test",
@@ -1140,7 +1078,7 @@ class OpenAIClient:
                 })
                 continue
         raise RuntimeError("OpenAI failed to convert the prompt to YAML format after all attempts. Please check the prompt and try again.")
-        
+
     def save_ai_generated_prompt(self,
                                  existing_prompt_file: str,
                                  new_prompt_content: list[dict],):
@@ -1168,7 +1106,7 @@ class OpenAIClient:
                         data[k] = LiteralStr(v)
                     else:
                         wrap_cli_output_example(v)
-        
+
         # needed to properly print \n chars in cli output in generated yaml file
         yaml.add_representer(LiteralStr, literal_str_representer)
 
@@ -1213,21 +1151,21 @@ class OpenAIClient:
         guide_file = os.path.join(test_folder_path, "prompt.txt")
         if not os.path.exists(guide_file):
             raise FileNotFoundError(f"Prompt file not found: {guide_file}")
-        
+
         return guide_file
-            
+
     def convert_prompt(self, test_name: str) -> list[dict]:
         """
         Retrieve the steps from the prompt YAML file.
-        
+
         Args:
             test_name (str): Name of the test
-            
+
         Returns:
             list[dict]: List of steps defined in the prompt
         """
         prompt_file = self.get_test_prompt(test_name)
-        
+
         yaml_prompt_content = None
         if not os.path.exists(prompt_file):
             raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
@@ -1245,7 +1183,7 @@ class OpenAIClient:
         self.save_ai_generated_prompt(prompt_file, yaml_prompt_content)
 
         return yaml_prompt_content
-    
+
     def generate_test(self, test_name: str):
         test_folder_path = os.path.join("tests", "lab1", test_name)
 
@@ -1256,22 +1194,18 @@ class OpenAIClient:
         with open(guide_file, "r") as f:
             steps = yaml.safe_load(f)
             
-        # Analyze prompt quality before proceeding
-        # can_proceed, quality_score, issues = self.analyze_test_prompt(steps)
-        # if not can_proceed:
-        #     print("\nTest generation halted due to insufficient prompt quality.")
-        #     print("Please address the identified issues and try again.")
-        #     return
-            
-   
+        # Analyze prompt quality and gather clarifications before proceeding
+        can_proceed, enriched_steps = self.analyze_test_prompt(steps, test_folder_path)
+        if not can_proceed:
+            return
+
         # Create test file from template
         test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
         
         deciphers_map = {}
-        
         steps_description = []
 
-        for step in steps:
+        for step in enriched_steps:
             print(f"\nProcessing step: {step}")
         
             # Refresh test_file_content with current file content before each step
