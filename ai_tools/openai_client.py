@@ -116,7 +116,8 @@ class OpenAIClient:
                 "MUST extract the exact command that needs to be executed"
             ],
             context={
-                "step_details": step[step["description_key"]]
+                "step_details": step[step["description_key"]],
+                "clarifications": yaml.dump(step.get('clarifications', {}), default_flow_style=False)
             }
         )
 
@@ -192,7 +193,8 @@ class OpenAIClient:
             context={
                 "cli_command": cli_command,
                 "step_details": yaml.dump(step, default_flow_style=False),
-                "class_name": class_name
+                "class_name": class_name,
+                "clarifications": yaml.dump(step.get('clarifications', {}), default_flow_style=False)
             },
             output_format="""
 # decipher.py
@@ -628,7 +630,7 @@ class OpenAIClient:
         
         return new_file_content, explanation, True
 
-    def _analyze_test_step_prompt(self, step: dict, test_file_content: str, previous_steps_description: list[str]) -> tuple[bool, list[dict], str]:
+    def _analyze_test_step_prompt(self, step: dict, test_file_content: str, previous_steps_description: list[str], deciphers_map: dict) -> tuple[bool, list[dict], str]:
         """
         Analyze if the test step prompt is clear enough for code generation.
         
@@ -636,6 +638,7 @@ class OpenAIClient:
             step: Step definition to analyze
             test_file_content: Current content of the test file
             previous_steps_description: List of previous step descriptions
+            deciphers_map: Dictionary mapping step numbers to decipher information
             
         Returns:
             tuple[bool, list[dict], str]: (is_clear, clarification_questions, analysis)
@@ -664,7 +667,8 @@ class OpenAIClient:
             context={
                 "step_details": yaml.dump(step, default_flow_style=False),
                 "current_test_file": test_file_content,
-                "previous_steps": previous_steps_description
+                "previous_steps": previous_steps_description,
+                "deciphers_map": yaml.dump(deciphers_map, default_flow_style=False)
             },
             output_format="""
             {
@@ -735,7 +739,8 @@ class OpenAIClient:
                         step: dict, 
                         test_file_path: str, 
                         test_file_content: str,
-                        previous_steps_description: list[str]) -> dict:
+                        previous_steps_description: list[str],
+                        test_folder_path: str) -> tuple[dict, dict]:
         """
         Create a test step implementation by updating the test file.
         
@@ -746,22 +751,21 @@ class OpenAIClient:
             test_file_path: Path to the test file to update
             test_file_content: Current content of the test file
             previous_steps_description: List of previous step descriptions
+            test_folder_path: Path to the test folder for decipher creation
             
         Returns:
-            dict: Updated step with test_file_content and explanation
+            tuple[dict, dict]: (Updated step with test_file_content and explanation, updated deciphers_map)
         """
-        # Print step description for clarity
+                # Print step description for clarity
         print("\nAnalyzing test step:")
         print("=" * 80)
         print(yaml.dump(step, default_flow_style=False))
         print("=" * 80)
 
-        import pudb; pudb.set_trace()
-
         # Analyze step clarity
-        is_clear, questions, analysis = self._analyze_test_step_prompt(step, test_file_content, previous_steps_description)
+        is_clear, questions, analysis = self._analyze_test_step_prompt(step, test_file_content, previous_steps_description, deciphers_map)
         
-        # If clarity issues found, get user clarification
+                # If clarity issues found, get user clarification
         if not is_clear and questions:
             print("\nSome aspects of the test step need clarification.")
             print("Please provide clarification by either:")
@@ -793,6 +797,18 @@ class OpenAIClient:
             # Update step with clarifications
             step['clarifications'] = clarifications
             print("\nThank you for the clarifications. Proceeding with test generation...")
+
+
+        # Handle decipher creation if needed
+        if "cli_output_example" in step:
+            step_key = list(step.keys())[0]  # Get the first key (e.g., "step 1")
+            step["description_key"] = step_key
+            decipher_id = f"{step_key.replace(' ', '_')}_decipher"
+            step["decipher_id"] = decipher_id
+            decipher = self.create_decipher(step, test_folder_path)
+            deciphers_map[decipher["decipher_id"]] = decipher
+
+
 
         # Extract decipher information
         decipher_info, cli_command, decipher_class_name = self._get_decipher_info(step, deciphers_map)
@@ -845,11 +861,11 @@ class OpenAIClient:
                 
                 step["test_file_content"] = new_file_content
                 step["explanation"] = explanation
-                return step
+                return step, deciphers_map
 
         # If we reach here, all attempts failed
         print(f"Failed to generate test step after {MAX_ATTEMPTS} attempts")
-        return step
+        return step, deciphers_map
 
     def analyze_test_prompt(self, prompt_content: dict) -> tuple[bool, float, list[str]]:
         """
@@ -1251,55 +1267,24 @@ class OpenAIClient:
         # Create test file from template
         test_file_path, test_file_content = self.create_test_file(test_name, test_folder_path)
         
-
-         # TEMPORARY
-        # deciphers_map_path = os.path.join(test_folder_path, "deciphers_map.pkl")
-        # if os.path.exists(deciphers_map_path):
-        #     print(f"Loading existing deciphers_map from {deciphers_map_path}")
-        #     with open(deciphers_map_path, "rb") as f:
-        #         deciphers_map = pickle.load(f)
-        # else:
-        # TEMPORARY
         deciphers_map = {}
         
         steps_description = []
 
         for step in steps:
-            # Prompt the user to continue or skip this step
             print(f"\nProcessing step: {step}")
-
-
-            # user_input = input("Do you want to process this step? (y to continue, s to skip): ").strip().lower()
-            # if user_input == "s":
-            #     print("Skipping this step as per user request.")
-                
-            #     continue
-
-            if "cli_output_example" in step:
-                step_key = list(step.keys())[0]  # Get the first key (e.g., "step 1")
-                step["description_key"] = step_key
-                decipher_id = f"{step_key.replace(' ', '_')}_decipher"
-                step["decipher_id"] = decipher_id
-                decipher = self.create_decipher(step, test_folder_path)
-                deciphers_map[decipher["decipher_id"]] = decipher
-
-            # TEMPORARY
-            # Save deciphers_map to a file for later loading/deserialization
-            # deciphers_map_path = os.path.join(test_folder_path, "deciphers_map.pkl")
-            # with open(deciphers_map_path, "wb") as f:
-            #     pickle.dump(deciphers_map, f)
-            # TEMPORARY
         
             # Refresh test_file_content with current file content before each step
             with open(test_file_path, "r") as f:
                 current_test_file_content = f.read()
             
-            res = self.create_test_step(zcode_snippets, 
+            res, deciphers_map = self.create_test_step(zcode_snippets, 
                 deciphers_map, 
                 step, 
                 test_file_path, 
                 current_test_file_content,
-                steps_description)
+                steps_description,
+                test_folder_path)
 
             steps_description.append(res["explanation"])
 
