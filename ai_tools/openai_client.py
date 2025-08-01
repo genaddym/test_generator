@@ -111,9 +111,10 @@ class OpenAIClient:
         prompt = self._create_structured_prompt(
             role="Python network automation expert specializing in CLI command parsing and testing",
             task="""Extract the CLI command from the provided step details.
-Understand which parts of the extracted command represent dynamic or variable parameters.
+Understand which parts of the extracted command represent dynamic or variable parameters according to the test needs
 For each identified dynamic value, replace its specific instance in the command with a descriptive, uppercase with underscores parameter name.
-If the "Step Details" hint at the purpose of the parameter, incorporate that into the name (e.g., SOURCE_IP_ADDRESS, DESTINATION_PORT)""",
+If the "Step Details" hint at the purpose of the parameter, incorporate that into the name (e.g., SOURCE_IP_ADDRESS, DESTINATION_PORT).Assuming the provided CLI output examples are the full expected output from the command
+Assuming the provided CLI output examples are the full expected output from the command""",
             requirements=[
                 "MUST return only the CLI command text",
                 "MUST NOT include any explanations or additional text",
@@ -758,6 +759,8 @@ In case and the step contains cli command, further step generation logic will cr
 Deciphers (parsers) are responsible for converting string text from CLI responses into
 structured Python objects. Each decipher implements a specific parsing logic
 for a particular type of CLI output.
+Assume that the provided CLI output examples are the full expected output from the command
+Understand which parts of the extracted command represent dynamic or variable parameters according to the test needs. If that information is missing, ask for user clarification.
 It should be clear from the test prompt, what information should be extracted by decipher, according to the test needs.""",
             requirements=[
                 "MUST rate prompt quality on scale 0-10 (10 being perfect)",
