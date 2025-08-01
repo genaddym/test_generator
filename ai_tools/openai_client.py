@@ -11,7 +11,8 @@ import pickle
 import ast
 import copy
 
-OPENAI_MODEL = "gpt-4.1-mini"
+OPENAI_MODEL = "gpt-4.1"
+# "gpt-4.1"
 
 
 MAX_ATTEMPTS = 7
@@ -113,8 +114,8 @@ class OpenAIClient:
             task="""Extract the CLI command from the provided step details.
 Understand which parts of the extracted command represent dynamic or variable parameters according to the test needs
 For each identified dynamic value, replace its specific instance in the command with a descriptive, uppercase with underscores parameter name.
-If the "Step Details" hint at the purpose of the parameter, incorporate that into the name (e.g., SOURCE_IP_ADDRESS, DESTINATION_PORT).Assuming the provided CLI output examples are the full expected output from the command
-Assuming the provided CLI output examples are the full expected output from the command""",
+If the "Step Details" hint at the purpose of the parameter, incorporate that into the name (e.g., SOURCE_IP_ADDRESS, DESTINATION_PORT).
+""",
             requirements=[
                 "MUST return only the CLI command text",
                 "MUST NOT include any explanations or additional text",
@@ -155,19 +156,19 @@ Assuming the provided CLI output examples are the full expected output from the 
 
         # Create pickle filename based on decipher_id for caching in the command folder
         decipher_id = step.get("decipher_id", "unknown_decipher")
-        decipher_pickle_file = os.path.join(command_folder, f"{decipher_id}.pkl")
+        # decipher_pickle_file = os.path.join(command_folder, f"{decipher_id}.pkl")
         
-        # Check if cached decipher exists in the command folder
-        if os.path.exists(decipher_pickle_file):
-            print(f"Loading cached decipher from {decipher_pickle_file}")
-            try:
-                with open(decipher_pickle_file, "rb") as f:
-                    cached_step = pickle.load(f)
-                print(f"Successfully loaded cached decipher: {cached_step.get('class_name', 'Unknown')}")
-                return cached_step
-            except Exception as e:
-                print(f"Failed to load cached decipher from {decipher_pickle_file}: {e}")
-                print("Proceeding with fresh decipher generation...")
+        # # Check if cached decipher exists in the command folder
+        # if os.path.exists(decipher_pickle_file):
+        #     print(f"Loading cached decipher from {decipher_pickle_file}")
+        #     try:
+        #         with open(decipher_pickle_file, "rb") as f:
+        #             cached_step = pickle.load(f)
+        #         print(f"Successfully loaded cached decipher: {cached_step.get('class_name', 'Unknown')}")
+        #         return cached_step
+        #     except Exception as e:
+        #         print(f"Failed to load cached decipher from {decipher_pickle_file}: {e}")
+        #         print("Proceeding with fresh decipher generation...")
 
         class_name = ''.join(word.capitalize() for word in folder_name.split('_'))
         step["class_name"] = f"{class_name}Decipher"
@@ -180,7 +181,10 @@ Assuming the provided CLI output examples are the full expected output from the 
         # Generate initial implementation using structured prompt
         prompt = self._create_structured_prompt(
             role="Python network automation expert specializing in CLI command parsing and testing",
-            task=f"Generate a decipher class named '{class_name}Decipher' and corresponding unit test to parse CLI command output and extract relevant data for test automation.\n\n{step[step['description_key']]}",
+            task=f"""Deciphers (parsers) are responsible for converting string text from CLI responses into Python dictionaries. Generate a decipher class named '{class_name}Decipher' and corresponding unit test to parse CLI command output and extract relevant data for test automation.\n\n{step[step['description_key']]}
+            Assume that the provided CLI output examples are the full expected output from the command.
+            Pay attention to the clarifications that might be provided below.
+            """,
             requirements=[
                 f"MUST name the decipher class exactly '{class_name}Decipher' (CamelCase, no extra suffixes)",
                 "MUST inherit from Decipher base class",
@@ -577,7 +581,10 @@ Assuming the provided CLI output examples are the full expected output from the 
             
         return self._create_structured_prompt(
             role="Python network automation expert specializing in test automation",
-            task="Implement a test step by updating the existing test file content. Add the implementation to the test method following the existing structure.",
+            task="""Implement a test step by updating the existing test file content. Add the implementation to the test method following the existing structure.
+            Pay attention to the clarifications that might be provided below.
+            If the step contains CLI command, use the decipher class to parse the output. Use the decipher output example from the provided decipher map, to understand the expected output format.
+            """,
             requirements=[
                 "MUST follow the existing test structure and patterns",
                 "MUST add clear comments explaining the implementation",
@@ -596,6 +603,7 @@ Assuming the provided CLI output examples are the full expected output from the 
                 "CRITICAL: DO NOT use backticks (```) or language tags like ```python",
                 "CRITICAL: Return only raw Python code without any markdown delimiters"
                 "CRITICAL: DO NOT remove any unused imports, constants, variables, or methods - they will be used in later steps"
+                "To effectively inform users about the validation process, add INFO level logs that are both informative and concise."
             ],
             context=context,
             output_format="""
@@ -756,8 +764,7 @@ Assuming the provided CLI output examples are the full expected output from the 
             task="""Analyze the test prompt and identify areas needing clarification for automated test generation.
 Analyze if the provided test description is clear enough for automated code generation. The test step can contain CLI command. Cli command should be specified. In case and the step contains cli command, it must contains the example of the cli output for that command.
 In case and the step contains cli command, further step generation logic will create a decipher for it.
-Deciphers (parsers) are responsible for converting string text from CLI responses into
-structured Python objects. Each decipher implements a specific parsing logic
+Deciphers (parsers) are responsible for converting string text from CLI responses into structured Python objects. Each decipher implements a specific parsing logic
 for a particular type of CLI output.
 Assume that the provided CLI output examples are the full expected output from the command
 Understand which parts of the extracted command represent dynamic or variable parameters according to the test needs. If that information is missing, ask for user clarification.
