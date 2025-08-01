@@ -1,5 +1,6 @@
 import os
 from typing import Optional, Tuple
+from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
 import yaml
@@ -8,9 +9,10 @@ import json
 import subprocess
 import pickle
 import ast
+import copy
 
-OPENAI_MODEL = "gpt-4.1"
-
+# OPENAI_MODEL = "gpt-4.1"
+OPENAI_MODEL = "gpt-4.1-mini"
 
 MAX_ATTEMPTS = 7
 
@@ -876,6 +878,205 @@ class OpenAIClient:
 
         return fixed_code
 
+    def fix_prompt_file_format(self, file_content: str) -> list[dict]:
+        """
+        Fixes a ill formed YAML fole by means of OpenAI API
+        Args:
+            file_content (str): The content of the YAML file
+        Returns:
+            list[dict]: Parsed YAML steps as Python objects
+        """
+        exmple_prompt = Path(__file__).parent / "resources/example_prompt_format.yml"
+        example_prompt_content = ""
+        if exmple_prompt.exists():
+            with open(exmple_prompt, "r") as f:
+                example_prompt_content = f.read()
+        if not example_prompt_content:
+            raise RuntimeError("Example prompt format file not found or empty. Expected path : " + exmple_prompt.as_posix())
+        
+        prompt = self._create_structured_prompt(
+            role="You are an AI Agent that know to perform text-to-yaml conversion",
+            task="Apply a set of rules to a given free text file to structure it into yaml. the yaml will represent a structured description of some networking test",
+            requirements=[
+                """Step Identification Patterns: Look for lines starting with "- step" followed by a number and colon. Examples include "- step 1:", "- step: 3", "- step1:". Accept variations in formatting but step numbers should be sequential, though handle gaps gracefully.""",
+                """Step Description Extraction: The step description starts immediately after the step identifier. It may be on the same line as the step identifier or on subsequent indented lines. Description can be a single quoted string like "Execute on DUT: show command", a multi-line block starting with pipe symbol for literal block scalar, or plain text that continues until CLI output or next step is found.""",
+                """Substeps: If a step is subdivided into substeps, each substep should be treated as a separate step with its own "step <number>" key. For example, if step 1 has substeps, they should be numbered as "step 1.1", "step 1.2", etc. IMPORTANT: If there is only a single substep for a particular step, DO NOT create a substep in the generated YAML. All the substep information should remain within the main step block in the generated YAML.""",
+                """CLI Output Detection: Look for indicators such as "cli output", "here is the cli output", "example cli output". CLI output typically follows keywords like "here is the cli output", "example cli output", "CLI command output:". CLI output continues until next step marker or end of file.""",
+                """YAML Structure Requirements: Generate a YAML list where each item represents one step. Each step item contains 1-2 keys maximum: "step <number>" which is required and contains the step description, and "cli_output_example" which is optional and contains raw CLI command output.""",
+                """Step Key Formatting: Always use format "step <number>" such as "step 1", "step 2". Preserve original step numbering from input text. Use space between "step" and the number.""",
+                """Description Value Formatting: If description is single line and simple, use quoted string format. If description is multi-line or contains special characters, use literal block scalar with pipe symbol. Preserve original quotes if they exist in the description. Remove any leading or trailing whitespace from descriptions.""",
+                """CLI Output Formatting: Always use literal block scalar with pipe symbol for "cli_output_example" values. Preserve exact formatting, spacing, and special characters from CLI output. Include empty lines and table formatting as-is. Do not add quotes around CLI output content.""",
+                """Content Extraction Logic: For step description, extract text between step identifier and CLI output indicator or next step. For CLI output, extract text after CLI output indicator until next step marker or end of file. Handle indentation properly by removing common leading whitespace but preserve relative indentation. Skip empty lines at the beginning and end of extracted content.""",
+                """Special Content Handling: Preserve table formatting in both descriptions and CLI output. Maintain code snippets and command syntax with backticks. Keep technical terms and device names exactly as written. Preserve numbered and bulleted lists within descriptions.""",
+                """Error Handling Rules: If step number is missing or malformed, assign sequential numbers. If CLI output is mentioned but not found, omit "cli_output_example" key. If step description is empty, use placeholder "Step description not provided". Handle incomplete or malformed input gracefully.""",
+                """Validation Requirements: Ensure each step has valid YAML syntax. Verify step numbers are unique and properly formatted. Confirm CLI output, if present, maintains original formatting. Check that no content from input text is lost or corrupted.""",
+                """Output Formatting Standards: Use 2-space indentation for YAML. Place "cli_output_example" immediately after corresponding step description. Maintain consistent spacing between list items. End file with single newline character.""",
+                """Don't truncate or modify cli_output_example and preserve the exact formatting, spacing, and special characters from CLI output. Include empty lines and/or new lines and table formatting as-is. Do not add quotes around CLI output content.""",
+            ],
+            context={
+                "example_prompt_content": example_prompt_content,
+                "prompt_content": file_content,
+            },
+            output_format="""
+            <the generated yaml file>
+            """
+        )
+
+        messages = [
+            {"role": "system", "content": "You need to transform the etxt file into yaml structure following the specifued rules"},
+            {"role": "user", "content": prompt}
+        ]
+
+        print("\nAsking OpenAI to fix the YAML format...")
+        self._save_messages(messages)
+        content = ""
+        for attempt in range(MAX_ATTEMPTS):
+            print(f"Sending prompt to OpenAI... Attempt {attempt + 1} of {MAX_ATTEMPTS}")
+            response = self.client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+                temperature=0.1
+            )
+            content = response.choices[0].message.content.strip()
+            print("Received response from OpenAI:\n<response>\n%s\n</response>" % content)
+            if not content:
+                print("Error: Received empty response from OpenAI")
+                messages.append({
+                    "role": "user",
+                    "content": "OpenAI returned empty response. Please provide the response in the correct format with new file content and explanation sections."
+                })
+                continue
+            try:
+                steps = yaml.safe_load(content)
+                if not isinstance(steps, list):
+                    print("Error: OpenAI response is not a valid YAML list")
+                    messages.append({
+                        "role": "user",
+                        "content": f"Your response is not a valid YAML list. It has type {type(steps)}. Please fix it and return a valid YAML list."
+                    })
+                    continue
+                if len(steps) == 0:
+                    print("Error: OpenAI response is an empty YAML list")
+                    messages.append({
+                        "role": "user",
+                        "content": "Your response is an empty YAML list. Please fix it and return a valid YAML list with at least one step."
+                    })
+                    continue
+                return steps
+            except yaml.YAMLError as e:
+                print(f"Error parsing YAML content: {str(e)}")
+                messages.append({
+                    "role": "user",
+                    "content": f"Your response is not valid YAML. Please fix it and return valid YAML content.\n\n{content}. got yaml.YAMLError {str(e)} while trying to perform yaml.safe_load(content) on it. Please fix the YAML format and try again."
+                })
+                continue
+        raise RuntimeError("OpenAI failed to convert the prompt to YAML format after all attempts. Please check the prompt and try again.")
+        
+    def save_ai_generated_prompt(self,
+                                 existing_prompt_file: str,
+                                 new_prompt_content: list[dict],):
+        """
+        Save the AI-generated prompt content to a file.
+        The file will have the suffix '_ai_generated' added to the original file name.
+        If this name already exists,  a new file with the suffix '_ai_generated.1' or "_ai_generated.2| etc will be created.
+        """
+        class LiteralStr(str):
+            pass
+
+        def literal_str_representer(dumper, data):
+            return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+
+        def wrap_cli_output_example(data: list | dict):
+            """
+            Recursively wrap cli_output_example values in LiteralStr for block style YAML.
+            """
+            if isinstance(data, list):
+                for item in data:
+                    wrap_cli_output_example(item)
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    if k == "cli_output_example" and isinstance(v, str):
+                        data[k] = LiteralStr(v)
+                    else:
+                        wrap_cli_output_example(v)
+        
+        # needed to properly print \n chars in cli output in generated yaml file
+        yaml.add_representer(LiteralStr, literal_str_representer)
+
+        existing = Path(existing_prompt_file)
+        # extract the file anem,up to teh suffix
+        file_name = existing.stem
+        file_suffix = existing.suffix
+        # create the new file name
+        new_file_name = f"{file_name}_ai_generated.yml"
+        new_file_path = existing.parent / new_file_name
+        # Check if the file already exists
+        if new_file_path.exists():
+            print(
+                f"File {new_file_path.as_posix()} already exists."
+                "Please confirm if you want to overwrite it. (Yes/No): default=Yes"
+            )
+            answer= input().strip().lower() or "yes"
+            if answer.lower() not in ["yes", "y"]:
+                print("Exiting without saving the AI-generated prompt.")
+                return
+        # Write the new prompt content to the file
+        copied = copy.deepcopy(new_prompt_content)
+        wrap_cli_output_example(copied)
+        with open(new_file_path, "w") as f:
+            yaml.dump(
+                copied,
+                f,
+                default_flow_style=False,
+                default_style=None,
+                sort_keys=False,
+            )
+        print(f"AI-generated prompt saved to {new_file_path.as_posix()}")
+
+    def get_test_prompt(self, test_name: str) -> str:
+        """
+        Identifies the `prompt.txt` plain text file corresponding to the test_name and returns its content.
+        """
+        test_folder_path = os.path.join("tests", "lab1", test_name)
+        if not os.path.exists(test_folder_path):
+            raise FileNotFoundError(f"Test folder not found: {test_folder_path}")
+
+        guide_file = os.path.join(test_folder_path, "prompt.txt")
+        if not os.path.exists(guide_file):
+            raise FileNotFoundError(f"Prompt file not found: {guide_file}")
+        
+        return guide_file
+            
+    def convert_prompt(self, test_name: str) -> list[dict]:
+        """
+        Retrieve the steps from the prompt YAML file.
+        
+        Args:
+            test_name (str): Name of the test
+            
+        Returns:
+            list[dict]: List of steps defined in the prompt
+        """
+        prompt_file = self.get_test_prompt(test_name)
+        
+        yaml_prompt_content = None
+        if not os.path.exists(prompt_file):
+            raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
+        file_content = ""
+        with open(prompt_file, "r") as f:
+            file_content = f.read()
+
+        try:
+            yaml_prompt_content = yaml.safe_load(file_content)
+        except yaml.YAMLError as e:
+            print(f"Error parsing YAML file {prompt_file}: {str(e)}")
+            print("Asking OpenAI to fix the YAML format...")
+            yaml_prompt_content = self.fix_prompt_file_format(file_content)
+
+        self.save_ai_generated_prompt(prompt_file, yaml_prompt_content)
+
+        return yaml_prompt_content
+    
     def generate_test(self, test_name: str):
         test_folder_path = os.path.join("tests", "lab1", test_name)
 
@@ -891,7 +1092,7 @@ class OpenAIClient:
         # if not can_proceed:
         #     print("\nTest generation halted due to insufficient prompt quality.")
         #     print("Please address the identified issues and try again.")
-            # return
+        #     return
             
    
         # Create test file from template
