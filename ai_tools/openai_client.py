@@ -11,7 +11,7 @@ import pickle
 import ast
 import copy
 
-OPENAI_MODEL = "gpt-4.1"
+OPENAI_MODEL = "gpt-4.1-mini"
 
 
 MAX_ATTEMPTS = 7
@@ -30,6 +30,7 @@ class OpenAIClient:
             raise ValueError("OpenAI API key not found. Please provide it or set it in .env file")
         
         self.client = OpenAI(api_key=self.api_key)
+        self.debug_mode = False  # Default to non-debug mode
     
     def sanitize_folder_name(self, name: str) -> str:
         """
@@ -109,11 +110,15 @@ class OpenAIClient:
     def create_decipher(self, step: dict, test_folder_path: str) -> dict:
         prompt = self._create_structured_prompt(
             role="Python network automation expert specializing in CLI command parsing and testing",
-            task="Extract the CLI command from the provided step details.",
+            task="""Extract the CLI command from the provided step details.
+Understand which parts of the extracted command represent dynamic or variable parameters.
+For each identified dynamic value, replace its specific instance in the command with a descriptive, uppercase with underscores parameter name.
+If the "Step Details" hint at the purpose of the parameter, incorporate that into the name (e.g., SOURCE_IP_ADDRESS, DESTINATION_PORT)""",
             requirements=[
                 "MUST return only the CLI command text",
                 "MUST NOT include any explanations or additional text",
-                "MUST extract the exact command that needs to be executed"
+                "MUST extract the exact command that needs to be executed",
+                "MUST for each identified dynamic value, replace its specific instance in the command with a descriptive, uppercase parameter name."
             ],
             context={
                 "step_details": step[step["description_key"]],
@@ -174,7 +179,7 @@ class OpenAIClient:
         # Generate initial implementation using structured prompt
         prompt = self._create_structured_prompt(
             role="Python network automation expert specializing in CLI command parsing and testing",
-            task=f"Generate a decipher class named '{class_name}Decipher' and corresponding unit test to parse CLI command output and extract relevant data for test automation.",
+            task=f"Generate a decipher class named '{class_name}Decipher' and corresponding unit test to parse CLI command output and extract relevant data for test automation.\n\n{step[step['description_key']]}",
             requirements=[
                 f"MUST name the decipher class exactly '{class_name}Decipher' (CamelCase, no extra suffixes)",
                 "MUST inherit from Decipher base class",
@@ -192,8 +197,7 @@ class OpenAIClient:
             ],
             context={
                 "cli_command": cli_command,
-                "step_details": yaml.dump(step, default_flow_style=False),
-                "class_name": class_name,
+                "cli_output_example": step.get('cli_output_example', ''),
                 "clarifications": yaml.dump(step.get('clarifications', {}), default_flow_style=False)
             },
             output_format="""
@@ -459,7 +463,8 @@ class OpenAIClient:
             for message in messages:
                 f.write(f"{message['role']}: {message['content']}\n")
         
-        input("Prompt saved. Press Enter to continue after reviewing the saved messages...")
+        if hasattr(self, 'debug_mode') and self.debug_mode:
+            input("Prompt saved. Press Enter to continue after reviewing the saved messages...")
 
     def _create_structured_prompt(self, 
                                  role: str,
@@ -1185,6 +1190,10 @@ It should be clear from the test prompt, what information should be extracted by
         return yaml_prompt_content
 
     def generate_test(self, test_name: str):
+        # Ask user about debug mode
+        debug_mode = input("Run test generation in debug mode? (y/n): ").lower().strip() == 'y'
+        self.debug_mode = debug_mode
+        
         test_folder_path = os.path.join("tests", "lab1", test_name)
 
         with open("code_snippets.py", "r") as f:
