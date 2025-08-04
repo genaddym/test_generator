@@ -11,7 +11,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TEST_NAME = "test_evpn_cin_rr_server_validation_test"
+# TEST_NAME = "test_evpn_cin_rr_server_validation_test"
+TEST_NAME = "test_evpn_vpws_instance_validation"
 
 def main():
     try:

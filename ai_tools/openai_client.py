@@ -9,7 +9,6 @@ import json
 import subprocess
 import pickle
 import ast
-import copy
 
 OPENAI_MODEL = "gpt-4.1"
 # "gpt-4.1"
@@ -355,12 +354,12 @@ If the "Step Details" hint at the purpose of the parameter, incorporate that int
                         print(f"Warning: Error processing expected_output from {unit_test_file}: {str(e)}")
                     
                     # Cache the successfully created decipher for future use
-                    try:
-                        with open(decipher_pickle_file, "wb") as f:
-                            pickle.dump(step, f)
-                        print(f"Successfully cached decipher to {decipher_pickle_file}")
-                    except Exception as e:
-                        print(f"Warning: Failed to cache decipher to {decipher_pickle_file}: {e}")
+                    # try:
+                    #     with open(decipher_pickle_file, "wb") as f:
+                    #         pickle.dump(step, f)
+                    #     print(f"Successfully cached decipher to {decipher_pickle_file}")
+                    # except Exception as e:
+                    #     print(f"Warning: Failed to cache decipher to {decipher_pickle_file}: {e}")
                     
                     return step
                 else:
@@ -1008,13 +1007,22 @@ It should be clear from the test prompt, what information should be extracted by
         Returns:
             list[dict]: Parsed YAML steps as Python objects
         """
-        exmple_prompt = Path(__file__).parent / "resources/example_prompt_format.yml"
-        example_prompt_content = ""
-        if exmple_prompt.exists():
-            with open(exmple_prompt, "r") as f:
-                example_prompt_content = f.read()
-        if not example_prompt_content:
-            raise RuntimeError("Example prompt format file not found or empty. Expected path : " + exmple_prompt.as_posix())
+        exmple_prompt = """
+- step 1: "Validate the BGP sessions towards EVPN RRs. Execute on PCR/SCR under test: 'show config protocols bgp 33287 neighbor-group EVPN-CIN-RR-SERVER' command"
+  cli_output_example: |
+    protocols
+      bgp 33287
+    !
+- step 2: "Check the BGP sessions on PCR/SCR under test for the neighbors in the previous step. Execute cli command 'show bgp summary'. Ensure that under `L2vpn EVPN` both neighbors are present, and under `Up/Down` column we have a non-zero value which represents the amount of time the session had been up. Under the `State/PfxAccepted` column the integer values should be equal to or above 0."
+  cli_output_example: |
+    L2vpn EVPN
+    ----------------
+    BGP router identifier 96.109.183.50, local AS number 33287
+    BGP table node count 8013
+    
+      Neighbor        V         AS MsgRcvd    MsgSent    InQ  OutQ  AdjOut  Up/Down   State/PfxAccepted
+      10.28.88.105    4      33287      16241       9355    0     0       0 3d05h55m               4013
+      10.28.88.137    4      33287      20244       9355    0     0       0 3d05h55m               4013"""
 
         prompt = self._create_structured_prompt(
             role="You are an AI Agent that know to perform text-to-yaml conversion",
@@ -1036,7 +1044,7 @@ It should be clear from the test prompt, what information should be extracted by
                 """Don't truncate or modify cli_output_example and preserve the exact formatting, spacing, and special characters from CLI output. Include empty lines and/or new lines and table formatting as-is. Do not add quotes around CLI output content.""",
             ],
             context={
-                "example_prompt_content": example_prompt_content,
+                "example_prompt_content": exmple_prompt,
                 "prompt_content": file_content,
             },
             output_format="""
@@ -1094,110 +1102,6 @@ It should be clear from the test prompt, what information should be extracted by
                 continue
         raise RuntimeError("OpenAI failed to convert the prompt to YAML format after all attempts. Please check the prompt and try again.")
 
-    def save_ai_generated_prompt(self,
-                                 existing_prompt_file: str,
-                                 new_prompt_content: list[dict],):
-        """
-        Save the AI-generated prompt content to a file.
-        The file will have the suffix '_ai_generated' added to the original file name.
-        If this name already exists,  a new file with the suffix '_ai_generated.1' or "_ai_generated.2| etc will be created.
-        """
-        class LiteralStr(str):
-            pass
-
-        def literal_str_representer(dumper, data):
-            return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
-
-        def wrap_cli_output_example(data: list | dict):
-            """
-            Recursively wrap cli_output_example values in LiteralStr for block style YAML.
-            """
-            if isinstance(data, list):
-                for item in data:
-                    wrap_cli_output_example(item)
-            elif isinstance(data, dict):
-                for k, v in data.items():
-                    if k == "cli_output_example" and isinstance(v, str):
-                        data[k] = LiteralStr(v)
-                    else:
-                        wrap_cli_output_example(v)
-
-        # needed to properly print \n chars in cli output in generated yaml file
-        yaml.add_representer(LiteralStr, literal_str_representer)
-
-        existing = Path(existing_prompt_file)
-        # extract the file anem,up to teh suffix
-        file_name = existing.stem
-        file_suffix = existing.suffix
-        # create the new file name
-        new_file_name = f"{file_name}_ai_generated.yml"
-        new_file_path = existing.parent / new_file_name
-        # Check if the file already exists
-        if new_file_path.exists():
-            print(
-                f"File {new_file_path.as_posix()} already exists."
-                "Please confirm if you want to overwrite it. (Yes/No): default=Yes"
-            )
-            answer= input().strip().lower() or "yes"
-            if answer.lower() not in ["yes", "y"]:
-                print("Exiting without saving the AI-generated prompt.")
-                return
-        # Write the new prompt content to the file
-        copied = copy.deepcopy(new_prompt_content)
-        wrap_cli_output_example(copied)
-        with open(new_file_path, "w") as f:
-            yaml.dump(
-                copied,
-                f,
-                default_flow_style=False,
-                default_style=None,
-                sort_keys=False,
-            )
-        print(f"AI-generated prompt saved to {new_file_path.as_posix()}")
-
-    def get_test_prompt(self, test_name: str) -> str:
-        """
-        Identifies the `prompt.txt` plain text file corresponding to the test_name and returns its content.
-        """
-        test_folder_path = os.path.join("tests", "lab1", test_name)
-        if not os.path.exists(test_folder_path):
-            raise FileNotFoundError(f"Test folder not found: {test_folder_path}")
-
-        guide_file = os.path.join(test_folder_path, "prompt.txt")
-        if not os.path.exists(guide_file):
-            raise FileNotFoundError(f"Prompt file not found: {guide_file}")
-
-        return guide_file
-
-    def convert_prompt(self, test_name: str) -> list[dict]:
-        """
-        Retrieve the steps from the prompt YAML file.
-
-        Args:
-            test_name (str): Name of the test
-
-        Returns:
-            list[dict]: List of steps defined in the prompt
-        """
-        prompt_file = self.get_test_prompt(test_name)
-
-        yaml_prompt_content = None
-        if not os.path.exists(prompt_file):
-            raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
-        file_content = ""
-        with open(prompt_file, "r") as f:
-            file_content = f.read()
-
-        try:
-            yaml_prompt_content = yaml.safe_load(file_content)
-        except yaml.YAMLError as e:
-            print(f"Error parsing YAML file {prompt_file}: {str(e)}")
-            print("Asking OpenAI to fix the YAML format...")
-            yaml_prompt_content = self.fix_prompt_file_format(file_content)
-
-        self.save_ai_generated_prompt(prompt_file, yaml_prompt_content)
-
-        return yaml_prompt_content
 
     def generate_test(self, test_name: str):
         # Ask user about debug mode
@@ -1209,9 +1113,24 @@ It should be clear from the test prompt, what information should be extracted by
         with open("code_snippets.py", "r") as f:
             zcode_snippets = f.read()
 
-        guide_file = os.path.join(test_folder_path, "prompt.yml")
-        with open(guide_file, "r") as f:
-            steps = yaml.safe_load(f)
+
+        guide_file_yml = os.path.join(test_folder_path, "prompt.yml")
+        guide_file_txt = os.path.join(test_folder_path, "prompt.txt")
+        try:
+            with open(guide_file_yml, "r") as f:
+                steps = yaml.safe_load(f)
+        except (FileNotFoundError, yaml.YAMLError) as e:
+            # If YAML file doesn't exist or has invalid format, try to read and convert text file
+            try:
+                with open(guide_file_txt, "r") as f:
+                    txt_content = f.read()
+                # Convert text to YAML format
+                steps = self.fix_prompt_file_format(txt_content)
+                # Save the converted content as YAML
+                with open(guide_file_yml, "w") as f:
+                    yaml.safe_dump(steps, f)
+            except (FileNotFoundError, IOError) as e:
+                raise RuntimeError(f"Neither prompt.yml nor prompt.txt found in {test_folder_path}") from e
             
         # Analyze prompt quality and gather clarifications before proceeding
         can_proceed, enriched_steps = self.analyze_test_prompt(steps, test_folder_path)
@@ -1269,5 +1188,3 @@ It should be clear from the test prompt, what information should be extracted by
             
         if attempt == MAX_ATTEMPTS:
             print("\nWarning: Could not fix all pylint issues after maximum attempts.")
-
-        
